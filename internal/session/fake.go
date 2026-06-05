@@ -32,5 +32,13 @@ func NewFakeManager() Manager {
 			Args:    []string{"version"},
 			Logs:    []string{"real-go-version ready"},
 		},
+		{
+			ID:      "shell-1",
+			Name:    "shell-1",
+			Kind:    SessionKindPTY,
+			Status:  StatusStopped,
+			Command: DefaultShellCommand(),
+			Logs:    []string{"shell-1 ready"},
+		},
 	})
 }

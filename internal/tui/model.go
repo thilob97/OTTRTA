@@ -18,14 +18,24 @@ const (
 	focusLogs
 )
 
+type UIMode string
+
+const (
+	UIModeMonitor UIMode = "monitor"
+	UIModeAttach  UIMode = "attach"
+)
+
 type Model struct {
-	manager       session.Manager
-	selected      int
-	focus         focusPanel
-	width         int
-	height        int
-	tickInterval  time.Duration
-	processEvents map[string]<-chan event.ProcessMsg
+	manager           session.Manager
+	selected          int
+	focus             focusPanel
+	width             int
+	height            int
+	tickInterval      time.Duration
+	mode              UIMode
+	attachedSessionID string
+	processEvents     map[string]<-chan event.ProcessMsg
+	ptyEvents         map[string]<-chan event.PTYMsg
 }
 
 func NewModel() Model {
@@ -33,7 +43,9 @@ func NewModel() Model {
 		manager:       session.NewFakeManager(),
 		focus:         focusSessions,
 		tickInterval:  defaultTickInterval,
+		mode:          UIModeMonitor,
 		processEvents: make(map[string]<-chan event.ProcessMsg),
+		ptyEvents:     make(map[string]<-chan event.PTYMsg),
 	}
 }
 
@@ -67,4 +79,29 @@ func pollProcessEvent(sessionID string, events <-chan event.ProcessMsg) tea.Cmd 
 		}
 		return msg
 	}
+}
+
+func pollPTYEvent(sessionID string, events <-chan event.PTYMsg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-events
+		if !ok {
+			return event.SessionPTYExitedMsg{SessionID: sessionID}
+		}
+		return msg
+	}
+}
+
+func adaptPTYEvents(events <-chan session.PTYEvent) <-chan event.PTYMsg {
+	out := make(chan event.PTYMsg, 128)
+	go func() {
+		defer close(out)
+		for msg := range events {
+			if msg.Err != nil || len(msg.Data) == 0 {
+				out <- event.SessionPTYExitedMsg{SessionID: msg.SessionID, Err: msg.Err}
+				continue
+			}
+			out <- event.SessionPTYOutputMsg{SessionID: msg.SessionID, Data: msg.Data}
+		}
+	}()
+	return out
 }

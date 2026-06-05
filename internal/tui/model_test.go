@@ -22,8 +22,8 @@ func TestKeyNavigationIsClamped(t *testing.T) {
 	m = updateForTest(t, m, keyRune('j'))
 	m = updateForTest(t, m, keyRune('j'))
 	m = updateForTest(t, m, keyRune('j'))
-	if m.selected != 3 {
-		t.Fatalf("selected = %d, want 3", m.selected)
+	if m.selected != 4 {
+		t.Fatalf("selected = %d, want 4", m.selected)
 	}
 }
 
@@ -142,6 +142,9 @@ func TestFakeLogTickAppendsOnlyRunningLogs(t *testing.T) {
 	if len(after[3].Logs) != len(before[3].Logs) {
 		t.Fatalf("process session logs = %d, want %d", len(after[3].Logs), len(before[3].Logs))
 	}
+	if len(after[4].Logs) != len(before[4].Logs) {
+		t.Fatalf("PTY session logs = %d, want %d", len(after[4].Logs), len(before[4].Logs))
+	}
 }
 
 func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
@@ -161,6 +164,128 @@ func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
 	}
 	if strings.Contains(view, "right-only") {
 		t.Fatalf("view shows non-selected session log:\n%s", view)
+	}
+}
+
+func TestDisplayLogLinesSanitizesPTYControlSequences(t *testing.T) {
+	lines := displayLogLines([]string{"\x1b[2J\x1b[H\r\nprompt> go version\r\n\x07"})
+	got := strings.Join(lines, "\n")
+	if strings.Contains(got, "\x1b") || strings.Contains(got, "\x07") || strings.Contains(got, "\r") {
+		t.Fatalf("display log still contains terminal controls: %q", got)
+	}
+	if !strings.Contains(got, "prompt> go version") {
+		t.Fatalf("display log lost printable output: %q", got)
+	}
+}
+
+func TestEnterAttachesOnlyRunningPTYSession(t *testing.T) {
+	m := NewModel()
+	m.selected = 4
+
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != UIModeMonitor || m.attachedSessionID != "" {
+		t.Fatalf("stopped PTY attach mode = %s/%q, want monitor/empty", m.mode, m.attachedSessionID)
+	}
+	if m.focus != focusLogs {
+		t.Fatalf("stopped PTY enter focus = %d, want logs", m.focus)
+	}
+
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+	m.focus = focusSessions
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != UIModeAttach || m.attachedSessionID != "shell-1" {
+		t.Fatalf("running PTY attach mode = %s/%q, want attach/shell-1", m.mode, m.attachedSessionID)
+	}
+}
+
+func TestAttachModeForwardsKeysAndEscDetaches(t *testing.T) {
+	m := NewModel()
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+	m.mode = UIModeAttach
+	m.attachedSessionID = "shell-1"
+
+	updated, cmd := m.Update(keyRune('q'))
+	if cmd != nil {
+		t.Fatal("q in attach mode returned a command; want forwarded input")
+	}
+	m = modelFromUpdate(t, updated)
+	s, _ = m.manager.SessionByID("shell-1")
+	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "[system] write failed:") {
+		t.Fatalf("attach key did not attempt PTY write: %v", s.Logs)
+	}
+
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != UIModeMonitor || m.attachedSessionID != "" {
+		t.Fatalf("esc detach mode = %s/%q, want monitor/empty", m.mode, m.attachedSessionID)
+	}
+}
+
+func TestSpaceStoppingPTYDoesNotQuitTUI(t *testing.T) {
+	m := NewModel()
+	m.selected = 4
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+
+	updated, cmd := m.Update(keyRune(' '))
+	if cmd != nil {
+		t.Fatal("space on running PTY returned a command; want no quit command")
+	}
+	m = modelFromUpdate(t, updated)
+	if m.mode != UIModeMonitor {
+		t.Fatalf("mode after PTY stop = %s, want monitor", m.mode)
+	}
+}
+
+func TestPTYOutputMessagesCoalesceTypedCharacters(t *testing.T) {
+	m := NewModel()
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+	s.Logs = []string{"[system] started PTY: shell"}
+
+	m = updateForTest(t, m, event.SessionPTYOutputMsg{SessionID: "shell-1", Data: []byte("a")})
+	m = updateForTest(t, m, event.SessionPTYOutputMsg{SessionID: "shell-1", Data: []byte("b")})
+	m = updateForTest(t, m, event.SessionPTYOutputMsg{SessionID: "shell-1", Data: []byte("c")})
+
+	s, _ = m.manager.SessionByID("shell-1")
+	if got := strings.Join(s.Logs, "|"); got != "[system] started PTY: shell|abc" {
+		t.Fatalf("PTY typed output logs = %q, want one coalesced line", got)
+	}
+}
+
+func TestPTYMessagesAppendAndExit(t *testing.T) {
+	m := NewModel()
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+	m.mode = UIModeAttach
+	m.attachedSessionID = "shell-1"
+
+	m = updateForTest(t, m, event.SessionPTYOutputMsg{SessionID: "shell-1", Data: []byte("hello\r\n")})
+	s, _ = m.manager.SessionByID("shell-1")
+	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "hello") {
+		t.Fatalf("PTY output not appended: %v", s.Logs)
+	}
+
+	m = updateForTest(t, m, event.SessionPTYExitedMsg{SessionID: "shell-1"})
+	s, _ = m.manager.SessionByID("shell-1")
+	if s.Status != session.StatusStopped {
+		t.Fatalf("status after PTY exit = %s, want stopped", s.Status)
+	}
+	if m.mode != UIModeMonitor || m.attachedSessionID != "" {
+		t.Fatalf("mode after attached PTY exit = %s/%q, want monitor/empty", m.mode, m.attachedSessionID)
+	}
+}
+
+func TestFooterShowsMonitorAndAttachModes(t *testing.T) {
+	m := NewModel()
+	if footer := m.renderFooter(); !strings.Contains(footer, "MONITOR") {
+		t.Fatalf("monitor footer = %q", footer)
+	}
+	m.mode = UIModeAttach
+	m.attachedSessionID = "shell-1"
+	if footer := m.renderFooter(); !strings.Contains(footer, "ATTACHED to shell-1 | esc detach") {
+		t.Fatalf("attach footer = %q", footer)
 	}
 }
 

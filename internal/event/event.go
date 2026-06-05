@@ -28,3 +28,25 @@ type SessionExitedMsg struct {
 }
 
 func (SessionExitedMsg) processMsg() {}
+
+// PTYMsg is a Bubble Tea-safe PTY event. Goroutines send these through
+// channels; the TUI update loop owns all model mutation.
+type PTYMsg interface {
+	ptyMsg()
+}
+
+// SessionPTYOutputMsg appends raw PTY output to a PTY session.
+type SessionPTYOutputMsg struct {
+	SessionID string
+	Data      []byte
+}
+
+func (SessionPTYOutputMsg) ptyMsg() {}
+
+// SessionPTYExitedMsg reports that a PTY-backed session has exited.
+type SessionPTYExitedMsg struct {
+	SessionID string
+	Err       error
+}
+
+func (SessionPTYExitedMsg) ptyMsg() {}

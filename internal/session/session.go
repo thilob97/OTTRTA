@@ -14,10 +14,11 @@ type SessionKind string
 const (
 	SessionKindFake    SessionKind = "fake"
 	SessionKindProcess SessionKind = "process"
+	SessionKindPTY     SessionKind = "pty"
 )
 
-// Session is the user-visible state for either a fake session or a real
-// foreground process session. Runtime process handles live in Manager.
+// Session is the user-visible state for fake, process, or PTY-backed sessions.
+// Runtime handles live in Manager.
 type Session struct {
 	ID         string
 	Name       string
@@ -28,6 +29,8 @@ type Session struct {
 	WorkDir    string
 	Logs       []string
 	logCounter int
+	outputCol  int
+	outputRow  int
 }
 
 func (s Session) Running() bool {

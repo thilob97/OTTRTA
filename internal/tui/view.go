@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/handyfun97/ottrta/internal/session"
+	"unicode"
 )
 
 func (m Model) View() string {
@@ -40,7 +42,7 @@ func (m Model) View() string {
 		Height(panelHeight).
 		Render(m.renderLogPanel(rightWidth, panelHeight))
 
-	footer := mutedStyle.Render("j/k select  h/l focus  space toggle  enter open  q quit")
+	footer := mutedStyle.Render(m.renderFooter())
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, left, right),
@@ -85,14 +87,58 @@ func (m Model) renderLogPanel(width int, height int) string {
 	if visible < 1 {
 		visible = 1
 	}
-	logs := s.Logs
-	if len(logs) > visible {
-		logs = logs[len(logs)-visible:]
+	displayLogs := displayLogLines(s.Logs)
+	if len(displayLogs) > visible {
+		displayLogs = displayLogs[len(displayLogs)-visible:]
 	}
-	for _, line := range logs {
+	for _, line := range displayLogs {
 		lines = append(lines, mutedStyle.Width(width-2).Render(line))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func displayLogLines(logs []string) []string {
+	lines := make([]string, 0, len(logs))
+	for _, log := range logs {
+		cleaned := sanitizeLogText(log)
+		if cleaned == "" {
+			lines = append(lines, "")
+			continue
+		}
+		lines = append(lines, strings.Split(cleaned, "\n")...)
+	}
+	return lines
+}
+
+func sanitizeLogText(text string) string {
+	stripped := ansi.Strip(text)
+	stripped = strings.ReplaceAll(stripped, "\r\n", "\n")
+	stripped = strings.ReplaceAll(stripped, "\r", "\n")
+
+	out := strings.Builder{}
+	out.Grow(len(stripped))
+	for _, r := range stripped {
+		switch {
+		case r == '\n' || r == '\t':
+			out.WriteRune(r)
+		case unicode.IsControl(r):
+			continue
+		default:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+func (m Model) renderFooter() string {
+	if m.mode == UIModeAttach {
+		name := m.attachedSessionID
+		if s, ok := m.manager.SessionByID(m.attachedSessionID); ok {
+			name = s.Name
+		}
+		return fmt.Sprintf("ATTACHED to %s | esc detach", name)
+	}
+	return "MONITOR | j/k select  h/l focus  space toggle/start/stop  enter attach/open  q quit"
 }
 
 func renderStatus(status session.Status) string {
