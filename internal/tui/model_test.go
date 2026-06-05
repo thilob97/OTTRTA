@@ -21,12 +21,13 @@ func TestKeyNavigationIsClamped(t *testing.T) {
 	m = updateForTest(t, m, keyRune('j'))
 	m = updateForTest(t, m, keyRune('j'))
 	m = updateForTest(t, m, keyRune('j'))
-	if m.selected != 2 {
-		t.Fatalf("selected = %d, want 2", m.selected)
+	m = updateForTest(t, m, keyRune('j'))
+	if m.selected != 3 {
+		t.Fatalf("selected = %d, want 3", m.selected)
 	}
 }
 
-func TestSpaceTogglesSelectedSession(t *testing.T) {
+func TestSpaceTogglesSelectedFakeSession(t *testing.T) {
 	m := NewModel()
 	s, _ := m.manager.Session(0)
 	if s.Status != session.StatusRunning {
@@ -37,6 +38,63 @@ func TestSpaceTogglesSelectedSession(t *testing.T) {
 	s, _ = m.manager.Session(0)
 	if s.Status != session.StatusStopped {
 		t.Fatalf("status = %s, want stopped", s.Status)
+	}
+}
+
+func TestSpaceStartsProcessAndHandlesEvents(t *testing.T) {
+	m := NewModel()
+	m.selected = 3
+
+	updated, cmd := m.Update(keyRune(' '))
+	if cmd == nil {
+		t.Fatal("space on process session did not return a process poll command")
+	}
+	m = modelFromUpdate(t, updated)
+	s, _ := m.manager.SessionByID("real-go-version")
+	if s.Status != session.StatusRunning {
+		t.Fatalf("status after start = %s, want running", s.Status)
+	}
+
+	deadline := time.After(5 * time.Second)
+	for s.Status != session.StatusStopped {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for process exit: %v", s.Logs)
+		default:
+		}
+		msg := cmd()
+		updated, cmd = m.Update(msg)
+		m = modelFromUpdate(t, updated)
+		s, _ = m.manager.SessionByID("real-go-version")
+		if cmd == nil && s.Status != session.StatusStopped {
+			t.Fatalf("poll command stopped before process exit: %v", s.Logs)
+		}
+	}
+
+	logs := strings.Join(s.Logs, "\n")
+	if !strings.Contains(logs, "go version") {
+		t.Fatalf("logs do not contain go version output: %v", s.Logs)
+	}
+	if !strings.Contains(logs, "[system] exited with code 0") {
+		t.Fatalf("logs do not contain exit code: %v", s.Logs)
+	}
+}
+
+func TestSpaceStopsRunningProcessSession(t *testing.T) {
+	m := NewModel()
+	m.selected = 3
+
+	updated, _ := m.Update(keyRune(' '))
+	m = modelFromUpdate(t, updated)
+	updated, _ = m.Update(keyRune(' '))
+	m = modelFromUpdate(t, updated)
+
+	s, _ := m.manager.SessionByID("real-go-version")
+	if s.Status != session.StatusStopped {
+		t.Fatalf("status after stop = %s, want stopped", s.Status)
+	}
+	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "[system] stopped") {
+		t.Fatalf("logs do not contain stopped message: %v", s.Logs)
 	}
 }
 
@@ -81,6 +139,9 @@ func TestFakeLogTickAppendsOnlyRunningLogs(t *testing.T) {
 	if len(after[1].Logs) != len(before[1].Logs) {
 		t.Fatalf("stopped session logs = %d, want %d", len(after[1].Logs), len(before[1].Logs))
 	}
+	if len(after[3].Logs) != len(before[3].Logs) {
+		t.Fatalf("process session logs = %d, want %d", len(after[3].Logs), len(before[3].Logs))
+	}
 }
 
 func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
@@ -88,8 +149,8 @@ func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
 	m.width = 100
 	m.height = 24
 	m.manager = session.NewManager([]session.Session{
-		{ID: "left", Name: "left", Status: session.StatusRunning, Logs: []string{"left-only"}},
-		{ID: "right", Name: "right", Status: session.StatusRunning, Logs: []string{"right-only"}},
+		{ID: "left", Name: "left", Kind: session.SessionKindFake, Status: session.StatusRunning, Logs: []string{"left-only"}},
+		{ID: "right", Name: "right", Kind: session.SessionKindFake, Status: session.StatusRunning, Logs: []string{"right-only"}},
 	})
 
 	view := m.View()
@@ -106,6 +167,11 @@ func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
 func updateForTest(t *testing.T, m Model, msg tea.Msg) Model {
 	t.Helper()
 	updated, _ := m.Update(msg)
+	return modelFromUpdate(t, updated)
+}
+
+func modelFromUpdate(t *testing.T, updated tea.Model) Model {
+	t.Helper()
 	next, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("updated model has type %T", updated)

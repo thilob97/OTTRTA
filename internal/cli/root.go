@@ -18,6 +18,7 @@ func NewRootCommand() *cobra.Command {
 
 	cmd.AddCommand(newTUICommand())
 	cmd.AddCommand(newVersionCommand())
+	cmd.AddCommand(newRunCommand())
 
 	return cmd
 }

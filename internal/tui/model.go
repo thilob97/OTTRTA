@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,19 +19,21 @@ const (
 )
 
 type Model struct {
-	manager      session.Manager
-	selected     int
-	focus        focusPanel
-	width        int
-	height       int
-	tickInterval time.Duration
+	manager       session.Manager
+	selected      int
+	focus         focusPanel
+	width         int
+	height        int
+	tickInterval  time.Duration
+	processEvents map[string]<-chan event.ProcessMsg
 }
 
 func NewModel() Model {
 	return Model{
-		manager:      session.NewFakeManager(),
-		focus:        focusSessions,
-		tickInterval: defaultTickInterval,
+		manager:       session.NewFakeManager(),
+		focus:         focusSessions,
+		tickInterval:  defaultTickInterval,
+		processEvents: make(map[string]<-chan event.ProcessMsg),
 	}
 }
 
@@ -50,4 +53,18 @@ func tick(interval time.Duration) tea.Cmd {
 	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return event.FakeLogTick{At: t}
 	})
+}
+
+func processContext() context.Context {
+	return context.Background()
+}
+
+func pollProcessEvent(sessionID string, events <-chan event.ProcessMsg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-events
+		if !ok {
+			return event.SessionExitedMsg{SessionID: sessionID}
+		}
+		return msg
+	}
 }
