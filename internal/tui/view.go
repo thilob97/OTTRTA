@@ -100,7 +100,7 @@ var impColors = [...]lipgloss.Color{
 }
 
 const (
-	sessionCardMaxWidth      = 20
+	sessionCardMaxWidth      = 24
 	sessionPanelTargetWidth  = 2*sessionCardMaxWidth + 7
 	sessionPanelMinimumWidth = 42
 	logPanelMinimumWidth     = 30
@@ -304,14 +304,30 @@ func (m Model) renderSessionCard(s *session.Session, width int, selected bool) s
 		status += " !"
 	}
 
-	rows := []string{impArt(s.ID, s.Status, m.animationFrame)}
-	rows = append(rows, cardNameLines(s.Name, width-4)...)
-	rows = append(rows, mutedStyle.Render(s.ID), status)
+	avatarStr := impArt(s.ID, s.Status, m.animationFrame)
+	avatarWidth := lipgloss.Width(avatarStr)
+
+	textWidth := width - avatarWidth - 5
+	if textWidth < 8 {
+		textWidth = 8
+	}
+
+	nameLines := cardNameLines(s.Name, textWidth)
+	idLine := mutedStyle.Render(truncateANSI(s.ID, textWidth))
+	statusLine := status
+
+	var rightRows []string
+	rightRows = append(rightRows, nameLines...)
+	rightRows = append(rightRows, idLine, statusLine)
+	rightCol := strings.Join(rightRows, "\n")
+
+	cardContent := lipgloss.JoinHorizontal(lipgloss.Top, avatarStr, " ", rightCol)
+
 	style := sessionCardStyle
 	if selected {
 		style = selectedSessionCardStyle
 	}
-	return style.Width(width).Render(strings.Join(rows, "\n"))
+	return style.Width(width).Render(cardContent)
 }
 
 var runningImpBanners = [...]string{
