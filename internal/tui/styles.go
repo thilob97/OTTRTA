@@ -42,8 +42,8 @@ var (
 	modalStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("63")).
-			Padding(1, 2)
-
+			Padding(1, 2).
+			Background(lipgloss.Color("0"))
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("63"))

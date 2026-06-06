@@ -565,12 +565,23 @@ func centerOverlay(base, overlay string, width, height int) string {
 		col = 0
 	}
 
+	// Erstelle einen Hintergrund-Stil für die Leerzeichen
+	bgStyle := lipgloss.NewStyle().Background(lipgloss.Color("0"))
+
 	for i, line := range overlayLines {
 		target := row + i
 		if target >= len(baseLines) {
 			break
 		}
-		baseLines[target] = strings.Repeat(" ", col) + line
+		// Fülle links und rechts mit Hintergrundfarbe
+		leftPad := bgStyle.Render(strings.Repeat(" ", col))
+		lineWidth := lipgloss.Width(line)
+		remainingWidth := width - col - lineWidth
+		rightPad := ""
+		if remainingWidth > 0 {
+			rightPad = bgStyle.Render(strings.Repeat(" ", remainingWidth))
+		}
+		baseLines[target] = leftPad + line + rightPad
 	}
 	return strings.Join(baseLines, "\n")
 }

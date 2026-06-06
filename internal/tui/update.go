@@ -90,19 +90,25 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedSession = m.manager.ClampIndex(m.selectedSession - 1)
 		}
 	case "h", "left":
-		if m.focus == focusLogs {
-			m.focus = focusSessions
-		} else if m.focus == focusSessions {
+		if m.focus == focusSessions {
 			m.focus = focusTasks
+		} else if m.focus == focusTasks {
+			m.focus = focusSessions
 		}
 	case "l", "right":
 		if m.focus == focusTasks {
 			m.focus = focusSessions
 		} else if m.focus == focusSessions {
-			m.focus = focusLogs
+			m.focus = focusTasks
 		}
 	case "enter":
-		return m.attachSelected()
+		if m.focus == focusSessions {
+			m.focus = focusLogs
+		} else if m.focus == focusLogs {
+			return m.attachSelected()
+		} else if m.focus == focusTasks {
+			return m.toggleSelectedTask()
+		}
 	case " ", "space":
 		if m.focus == focusTasks {
 			return m.toggleSelectedTask()
