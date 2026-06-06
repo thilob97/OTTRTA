@@ -13,6 +13,30 @@ var (
 	blurredPanelStyle = basePanelStyle.Copy().
 				BorderForeground(lipgloss.Color("240"))
 
+	// Terminal panel: dark background for native feel
+	baseTermStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Padding(0, 1).
+			Background(lipgloss.Color("0"))
+
+	focusedTermStyle = baseTermStyle.Copy().
+				BorderForeground(lipgloss.Color("63"))
+
+	blurredTermStyle = baseTermStyle.Copy().
+				BorderForeground(lipgloss.Color("240"))
+
+	// Attach mode: full-screen terminal
+	attachPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.ThickBorder()).
+				BorderForeground(lipgloss.Color("63")).
+				Padding(0, 1).
+				Background(lipgloss.Color("0"))
+
+	modalStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")).
+			Padding(1, 2)
+
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("63"))
@@ -25,6 +49,7 @@ var (
 
 	runningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	stoppedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
+	failedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 )
 
 func panelStyle(focused bool) lipgloss.Style {
@@ -32,4 +57,11 @@ func panelStyle(focused bool) lipgloss.Style {
 		return focusedPanelStyle
 	}
 	return blurredPanelStyle
+}
+
+func termPanelStyle(focused bool) lipgloss.Style {
+	if focused {
+		return focusedTermStyle
+	}
+	return blurredTermStyle
 }

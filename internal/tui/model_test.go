@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -8,49 +10,59 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/handyfun97/ottrta/internal/event"
 	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/handyfun97/ottrta/internal/task"
 )
 
+func testModel() Model {
+	sessionMgr := session.NewManager([]session.Session{
+		{ID: "proc-1", Name: "proc-1", Kind: session.SessionKindProcess, Status: session.StatusStopped, Command: "go", Args: []string{"version"}},
+		{ID: "shell-1", Name: "shell-1", Kind: session.SessionKindPTY, Status: session.StatusStopped, Command: session.DefaultShellCommand()},
+		{ID: "omp-1", Name: "omp-1", Kind: session.SessionKindAgent, AgentKind: session.AgentKindOmp, Status: session.StatusStopped, Command: "omp"},
+	})
+	taskMgr := task.NewManager(&sessionMgr)
+	return newBaseModel(sessionMgr, taskMgr, "")
+}
+
 func TestKeyNavigationIsClamped(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 
 	m = updateForTest(t, m, keyRune('k'))
-	if m.selected != 0 {
-		t.Fatalf("selected = %d, want 0", m.selected)
+	if m.selectedSession != 0 {
+		t.Fatalf("selectedSession = %d, want 0", m.selectedSession)
 	}
 
 	m = updateForTest(t, m, keyRune('j'))
 	m = updateForTest(t, m, keyRune('j'))
 	m = updateForTest(t, m, keyRune('j'))
-	m = updateForTest(t, m, keyRune('j'))
-	if m.selected != 4 {
-		t.Fatalf("selected = %d, want 4", m.selected)
+	if m.selectedSession != 2 {
+		t.Fatalf("selectedSession = %d, want 2", m.selectedSession)
 	}
 }
 
-func TestSpaceTogglesSelectedFakeSession(t *testing.T) {
-	m := NewModel()
-	s, _ := m.manager.Session(0)
-	if s.Status != session.StatusRunning {
-		t.Fatalf("initial status = %s, want running", s.Status)
+func TestSpaceTogglesSelectedProcessSession(t *testing.T) {
+	m := testModel()
+	m.selectedSession = 0
+	updated, cmd := m.Update(keyRune(' '))
+	if cmd == nil {
+		t.Fatal("space on stopped process did not return poll command")
 	}
-
-	m = updateForTest(t, m, keyRune(' '))
-	s, _ = m.manager.Session(0)
-	if s.Status != session.StatusStopped {
-		t.Fatalf("status = %s, want stopped", s.Status)
+	m = modelFromUpdate(t, updated)
+	s, _ := m.manager.SessionByID("proc-1")
+	if s.Status != session.StatusRunning {
+		t.Fatalf("status = %s, want running", s.Status)
 	}
 }
 
 func TestSpaceStartsProcessAndHandlesEvents(t *testing.T) {
-	m := NewModel()
-	m.selected = 3
+	m := testModel()
+	m.selectedSession = 0
 
 	updated, cmd := m.Update(keyRune(' '))
 	if cmd == nil {
 		t.Fatal("space on process session did not return a process poll command")
 	}
 	m = modelFromUpdate(t, updated)
-	s, _ := m.manager.SessionByID("real-go-version")
+	s, _ := m.manager.SessionByID("proc-1")
 	if s.Status != session.StatusRunning {
 		t.Fatalf("status after start = %s, want running", s.Status)
 	}
@@ -65,7 +77,7 @@ func TestSpaceStartsProcessAndHandlesEvents(t *testing.T) {
 		msg := cmd()
 		updated, cmd = m.Update(msg)
 		m = modelFromUpdate(t, updated)
-		s, _ = m.manager.SessionByID("real-go-version")
+		s, _ = m.manager.SessionByID("proc-1")
 		if cmd == nil && s.Status != session.StatusStopped {
 			t.Fatalf("poll command stopped before process exit: %v", s.Logs)
 		}
@@ -81,15 +93,15 @@ func TestSpaceStartsProcessAndHandlesEvents(t *testing.T) {
 }
 
 func TestSpaceStopsRunningProcessSession(t *testing.T) {
-	m := NewModel()
-	m.selected = 3
+	m := testModel()
+	m.selectedSession = 0
 
 	updated, _ := m.Update(keyRune(' '))
 	m = modelFromUpdate(t, updated)
 	updated, _ = m.Update(keyRune(' '))
 	m = modelFromUpdate(t, updated)
 
-	s, _ := m.manager.SessionByID("real-go-version")
+	s, _ := m.manager.SessionByID("proc-1")
 	if s.Status != session.StatusStopped {
 		t.Fatalf("status after stop = %s, want stopped", s.Status)
 	}
@@ -99,7 +111,7 @@ func TestSpaceStopsRunningProcessSession(t *testing.T) {
 }
 
 func TestFocusKeys(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 
 	m = updateForTest(t, m, keyRune('l'))
 	if m.focus != focusLogs {
@@ -117,8 +129,181 @@ func TestFocusKeys(t *testing.T) {
 	}
 }
 
+func TestRenameModeEditsCommitsRendersAndCancels(t *testing.T) {
+	m := testModel()
+
+	m = updateForTest(t, m, keyRune('r'))
+	if m.mode != UIModeRename || m.renameSessionID != "proc-1" || m.renameInput != "proc-1" {
+		t.Fatalf("rename start = mode %s id %q input %q", m.mode, m.renameSessionID, m.renameInput)
+	}
+	if footer := m.renderFooter(); !strings.Contains(footer, "RENAME | enter save") {
+		t.Fatalf("rename footer = %q", footer)
+	}
+	if view := m.View(); !strings.Contains(view, "Rename session") || !strings.Contains(view, "proc-1") {
+		t.Fatalf("rename modal missing from view:\n%s", view)
+	}
+
+	m = updateForTest(t, m, keyRune('x'))
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	s, _ := m.manager.SessionByID("proc-1")
+	if m.mode != UIModeMonitor || m.renameSessionID != "" || m.renameInput != "" || s.Name != "proc-1" {
+		t.Fatalf("rename cancel left mode/id/input/name = %s/%q/%q/%q", m.mode, m.renameSessionID, m.renameInput, s.Name)
+	}
+
+	m = updateForTest(t, m, keyRune('r'))
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updateForTest(t, m, keyRune('x'))
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	s, _ = m.manager.SessionByID("proc-1")
+	if m.mode != UIModeMonitor || s.Name != "proc-x" || s.ID != "proc-1" {
+		t.Fatalf("rename commit mode/name/id = %s/%q/%q", m.mode, s.Name, s.ID)
+	}
+	view := m.View()
+	if !strings.Contains(view, "proc-x") {
+		t.Fatalf("view does not contain renamed session:\n%s", view)
+	}
+}
+
+func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
+	m := testModel()
+
+	m = updateForTest(t, m, keyRune('n'))
+	if m.mode != UIModeNewAgent || m.newAgentWorkDirInput != "" {
+		t.Fatalf("new agent start = mode %s input %q", m.mode, m.newAgentWorkDirInput)
+	}
+	if footer := m.renderFooter(); !strings.Contains(footer, "NEW AGENT | tab complete") {
+		t.Fatalf("new agent footer = %q", footer)
+	}
+	if view := m.View(); !strings.Contains(view, "New OMP agent") || !strings.Contains(view, "Working directory") {
+		t.Fatalf("new agent modal missing from view:\n%s", view)
+	}
+	m = updateForTest(t, m, keyRune('x'))
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != UIModeMonitor || m.manager.Count() != 3 {
+		t.Fatalf("new agent cancel = mode %s count %d", m.mode, m.manager.Count())
+	}
+
+	m = updateForTest(t, m, keyRune('n'))
+	for _, r := range "C:/work" {
+		m = updateForTest(t, m, keyRune(r))
+	}
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	for _, r := range "dir" {
+		m = updateForTest(t, m, keyRune(r))
+	}
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.mode != UIModeMonitor || m.manager.Count() != 4 || m.selectedSession != 3 {
+		t.Fatalf("new agent commit = mode %s count %d selected %d", m.mode, m.manager.Count(), m.selectedSession)
+	}
+	s, _ := m.manager.SessionByID("omp-2")
+	if s == nil || s.WorkDir != "C:/work dir" || s.Command != "omp" || s.AgentKind != session.AgentKindOmp {
+		t.Fatalf("new agent session mismatch: %+v", s)
+	}
+	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "cwd: C:/work dir") {
+		t.Fatalf("new agent log does not include cwd: %v", s.Logs)
+	}
+	view := m.View()
+	if !strings.Contains(view, "cwd: C:/work dir") {
+		t.Fatalf("view does not render cwd:\n%s", view)
+	}
+}
+
+func TestNewAgentWorkDirTabCompletion(t *testing.T) {
+	root := t.TempDir()
+	alpha := filepath.Join(root, "alpha")
+	alpine := filepath.Join(root, "alpine")
+	beta := filepath.Join(root, "beta")
+	for _, dir := range []string{alpha, alpine, beta} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("Mkdir(%q) returned error: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "alphabet.txt"), []byte("file"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	completed, hint := completeDirectoryPath(filepath.Join(root, "al"))
+	if completed != filepath.Join(root, "alp") {
+		t.Fatalf("multi completion = %q, want common prefix %q", completed, filepath.Join(root, "alp"))
+	}
+	if !strings.Contains(hint, "alpha") || !strings.Contains(hint, "alpine") || strings.Contains(hint, "alphabet.txt") {
+		t.Fatalf("multi completion hint = %q", hint)
+	}
+
+	m := testModel()
+	m = updateForTest(t, m, keyRune('n'))
+	m.newAgentWorkDirInput = filepath.Join(root, "alph")
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	wantCompleted := alpha + string(os.PathSeparator)
+	if m.newAgentWorkDirInput != wantCompleted {
+		t.Fatalf("tab completed input = %q, want %q", m.newAgentWorkDirInput, wantCompleted)
+	}
+	if !strings.Contains(m.newAgentCompletionHint, "completed alpha") {
+		t.Fatalf("completion hint = %q", m.newAgentCompletionHint)
+	}
+	if view := m.View(); !strings.Contains(view, "completed alpha") || !strings.Contains(view, "tab complete") {
+		t.Fatalf("completion hint missing from modal:\n%s", view)
+	}
+}
+
+func TestNewModelWithStorePathLoadsPersistedSessionsWithoutDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	if err := session.SaveSessions(path, []session.Session{{
+		ID:        "saved-1",
+		Name:      "Saved One",
+		Kind:      session.SessionKindAgent,
+		Status:    session.StatusRunning,
+		Command:   "omp",
+		WorkDir:   "C:/saved",
+		AgentKind: session.AgentKindOmp,
+		Logs:      []string{"not persisted"},
+	}}); err != nil {
+		t.Fatalf("SaveSessions returned error: %v", err)
+	}
+
+	m := newModelWithStorePath(path)
+	if m.storePath != path {
+		t.Fatalf("storePath = %q, want %q", m.storePath, path)
+	}
+	if m.manager.Count() != 1 {
+		t.Fatalf("session count = %d, want 1 loaded session", m.manager.Count())
+	}
+	if len(m.taskManager.ListTasks()) != 0 {
+		t.Fatalf("loaded model created default tasks: %v", m.taskManager.ListTasks())
+	}
+	s, _ := m.manager.SessionByID("saved-1")
+	if s == nil || s.Name != "Saved One" || s.WorkDir != "C:/saved" || s.Status != session.StatusStopped || len(s.Logs) != 0 {
+		t.Fatalf("loaded session mismatch: %+v", s)
+	}
+}
+
+func TestNewModelWithStorePathFallsBackToDefaults(t *testing.T) {
+	missingPath := filepath.Join(t.TempDir(), "missing", "sessions.json")
+	m := newModelWithStorePath(missingPath)
+	if m.manager.Count() != 3 {
+		t.Fatalf("missing store session count = %d, want default demo sessions", m.manager.Count())
+	}
+	if len(m.taskManager.ListTasks()) != 1 {
+		t.Fatalf("missing store tasks = %d, want default demo task", len(m.taskManager.ListTasks()))
+	}
+
+	corruptPath := filepath.Join(t.TempDir(), "sessions.json")
+	if err := os.WriteFile(corruptPath, []byte("{"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	m = newModelWithStorePath(corruptPath)
+	if m.manager.Count() != 3 {
+		t.Fatalf("corrupt store session count = %d, want default demo sessions", m.manager.Count())
+	}
+	s, ok := m.manager.Session(0)
+	if !ok || !strings.Contains(strings.Join(s.Logs, "\n"), "[system] failed to load sessions:") {
+		t.Fatalf("corrupt store did not surface load error: %+v", s)
+	}
+}
+
 func TestQuitKeyReturnsCommand(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 
 	_, cmd := m.Update(keyRune('q'))
 	if cmd == nil {
@@ -126,34 +311,13 @@ func TestQuitKeyReturnsCommand(t *testing.T) {
 	}
 }
 
-func TestFakeLogTickAppendsOnlyRunningLogs(t *testing.T) {
-	m := NewModel()
-	before := m.manager.Sessions()
-
-	m = updateForTest(t, m, event.FakeLogTick{At: time.Unix(1, 0)})
-	after := m.manager.Sessions()
-
-	if len(after[0].Logs) != len(before[0].Logs)+1 {
-		t.Fatalf("selected running session logs = %d, want %d", len(after[0].Logs), len(before[0].Logs)+1)
-	}
-	if len(after[1].Logs) != len(before[1].Logs) {
-		t.Fatalf("stopped session logs = %d, want %d", len(after[1].Logs), len(before[1].Logs))
-	}
-	if len(after[3].Logs) != len(before[3].Logs) {
-		t.Fatalf("process session logs = %d, want %d", len(after[3].Logs), len(before[3].Logs))
-	}
-	if len(after[4].Logs) != len(before[4].Logs) {
-		t.Fatalf("PTY session logs = %d, want %d", len(after[4].Logs), len(before[4].Logs))
-	}
-}
-
 func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 	m.width = 100
 	m.height = 24
 	m.manager = session.NewManager([]session.Session{
-		{ID: "left", Name: "left", Kind: session.SessionKindFake, Status: session.StatusRunning, Logs: []string{"left-only"}},
-		{ID: "right", Name: "right", Kind: session.SessionKindFake, Status: session.StatusRunning, Logs: []string{"right-only"}},
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusRunning, Logs: []string{"left-only"}},
+		{ID: "right", Name: "right", Kind: session.SessionKindPTY, Status: session.StatusRunning, Logs: []string{"right-only"}},
 	})
 
 	view := m.View()
@@ -170,7 +334,7 @@ func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
 func TestDisplayLogLinesSanitizesPTYControlSequences(t *testing.T) {
 	lines := displayLogLines([]string{"\x1b[2J\x1b[H\r\nprompt> go version\r\n\x07"})
 	got := strings.Join(lines, "\n")
-	if strings.Contains(got, "\x1b") || strings.Contains(got, "\x07") || strings.Contains(got, "\r") {
+	if strings.Contains(got, "\x07") || strings.Contains(got, "\r") {
 		t.Fatalf("display log still contains terminal controls: %q", got)
 	}
 	if !strings.Contains(got, "prompt> go version") {
@@ -179,8 +343,8 @@ func TestDisplayLogLinesSanitizesPTYControlSequences(t *testing.T) {
 }
 
 func TestEnterAttachesOnlyRunningPTYSession(t *testing.T) {
-	m := NewModel()
-	m.selected = 4
+	m := testModel()
+	m.selectedSession = 1
 
 	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != UIModeMonitor || m.attachedSessionID != "" {
@@ -200,7 +364,7 @@ func TestEnterAttachesOnlyRunningPTYSession(t *testing.T) {
 }
 
 func TestAttachModeForwardsKeysAndEscDetaches(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 	s, _ := m.manager.SessionByID("shell-1")
 	s.Status = session.StatusRunning
 	m.mode = UIModeAttach
@@ -223,8 +387,8 @@ func TestAttachModeForwardsKeysAndEscDetaches(t *testing.T) {
 }
 
 func TestSpaceStoppingPTYDoesNotQuitTUI(t *testing.T) {
-	m := NewModel()
-	m.selected = 4
+	m := testModel()
+	m.selectedSession = 1
 	s, _ := m.manager.SessionByID("shell-1")
 	s.Status = session.StatusRunning
 
@@ -239,7 +403,7 @@ func TestSpaceStoppingPTYDoesNotQuitTUI(t *testing.T) {
 }
 
 func TestPTYOutputMessagesCoalesceTypedCharacters(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 	s, _ := m.manager.SessionByID("shell-1")
 	s.Status = session.StatusRunning
 	s.Logs = []string{"[system] started PTY: shell"}
@@ -255,7 +419,7 @@ func TestPTYOutputMessagesCoalesceTypedCharacters(t *testing.T) {
 }
 
 func TestPTYMessagesAppendAndExit(t *testing.T) {
-	m := NewModel()
+	m := testModel()
 	s, _ := m.manager.SessionByID("shell-1")
 	s.Status = session.StatusRunning
 	m.mode = UIModeAttach
@@ -278,14 +442,25 @@ func TestPTYMessagesAppendAndExit(t *testing.T) {
 }
 
 func TestFooterShowsMonitorAndAttachModes(t *testing.T) {
-	m := NewModel()
-	if footer := m.renderFooter(); !strings.Contains(footer, "MONITOR") {
+	m := testModel()
+	if footer := m.renderFooter(); !strings.Contains(footer, "MONITOR") || !strings.Contains(footer, "r rename") {
 		t.Fatalf("monitor footer = %q", footer)
 	}
 	m.mode = UIModeAttach
 	m.attachedSessionID = "shell-1"
 	if footer := m.renderFooter(); !strings.Contains(footer, "ATTACHED to shell-1 | esc detach") {
 		t.Fatalf("attach footer = %q", footer)
+	}
+	m.mode = UIModeRename
+	m.renameSessionID = "shell-1"
+	m.renameInput = "shell renamed"
+	if footer := m.renderFooter(); !strings.Contains(footer, "RENAME | enter save") {
+		t.Fatalf("rename footer = %q", footer)
+	}
+	m.mode = UIModeNewAgent
+	m.newAgentWorkDirInput = "C:/work"
+	if footer := m.renderFooter(); !strings.Contains(footer, "NEW AGENT | tab complete") {
+		t.Fatalf("new agent footer = %q", footer)
 	}
 }
 

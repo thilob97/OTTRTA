@@ -20,7 +20,15 @@ go run ./cmd/ottrta version
 - `space`: start/stop the selected session
 - `enter`: attach to a running PTY session, otherwise focus the log panel
 - `esc`: detach from an attached PTY session
-- `q`: quit in monitor mode
+- `n`: add a new stopped OMP agent session; enter a working directory path, use `tab` to complete directories, then `enter` creates or `esc` cancels
+- `r`: rename the selected session; `enter` saves and `esc` cancels
+- `x`: remove the selected session
+- `q` / `ctrl+c`: quit in monitor mode
+
+## Persistence
+
+- `ottrta tui` saves session definitions on clean exit and reloads them on the next start.
+- Persisted data is limited to session ID, name, kind, command, args, workdir, agent kind, and task ID. Logs and task metadata are not persisted.
 
 ## v0.3 PTY sessions
 

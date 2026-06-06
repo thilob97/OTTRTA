@@ -20,6 +20,8 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(newVersionCommand())
 	cmd.AddCommand(newRunCommand())
 	cmd.AddCommand(newShellCommand())
+	cmd.AddCommand(newAgentCommand())
+	cmd.AddCommand(newTaskCommand())
 
 	return cmd
 }

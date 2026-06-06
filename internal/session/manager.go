@@ -76,6 +76,19 @@ func (m *Manager) SessionByID(id string) (*Session, bool) {
 	return nil, false
 }
 
+func (m *Manager) RenameSession(id, name string) bool {
+	s, ok := m.SessionByID(id)
+	if !ok {
+		return false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	s.Name = name
+	return true
+}
+
 func (m *Manager) ClampIndex(index int) int {
 	if len(m.sessions) == 0 || index < 0 {
 		return 0
@@ -85,32 +98,18 @@ func (m *Manager) ClampIndex(index int) int {
 	}
 	return index
 }
-
-func (m *Manager) Toggle(index int) bool {
-	s, ok := m.Session(index)
-	if !ok || s.Kind != SessionKindFake {
-		return false
-	}
-	if s.Status == StatusRunning {
-		s.Status = StatusStopped
-	} else {
-		s.Status = StatusRunning
-	}
-	return true
+func (m *Manager) AddSession(s Session) {
+	m.sessions = append(m.sessions, s)
 }
 
-func (m *Manager) AppendLogsToRunning() int {
-	appended := 0
-	for i := range m.sessions {
-		if m.sessions[i].Kind != SessionKindFake || !m.sessions[i].Running() {
-			continue
-		}
-		m.sessions[i].logCounter++
-		line := fmt.Sprintf("[%03d] %s produced fake output", m.sessions[i].logCounter, m.sessions[i].Name)
-		m.appendLog(&m.sessions[i], line)
-		appended++
+func (m *Manager) RemoveSession(index int) {
+	if index < 0 || index >= len(m.sessions) {
+		return
 	}
-	return appended
+	id := m.sessions[index].ID
+	m.StopSession(id)
+	m.StopPTYSession(id)
+	m.sessions = append(m.sessions[:index], m.sessions[index+1:]...)
 }
 
 func (m *Manager) AppendLog(id string, line string) bool {
@@ -139,6 +138,26 @@ func (m *Manager) MarkStopped(id string) bool {
 	s.Status = StatusStopped
 	delete(m.runtimes, id)
 	delete(m.ptys, id)
+	return true
+}
+func (m *Manager) SetStatus(id string, status Status) bool {
+	s, ok := m.SessionByID(id)
+	if !ok {
+		return false
+	}
+	s.Status = status
+	if status != StatusRunning {
+		delete(m.runtimes, id)
+		delete(m.ptys, id)
+	}
+	return true
+}
+func (m *Manager) SetAttention(id string, attention bool) bool {
+	s, ok := m.SessionByID(id)
+	if !ok {
+		return false
+	}
+	s.NeedsAttention = attention
 	return true
 }
 
@@ -192,8 +211,8 @@ func (m *Manager) StartPTYSession(ctx context.Context, id string, cols, rows int
 	if !ok {
 		return nil, fmt.Errorf("session %q not found", id)
 	}
-	if s.Kind != SessionKindPTY {
-		return nil, fmt.Errorf("session %q is not a PTY session", id)
+	if s.Kind != SessionKindPTY && s.Kind != SessionKindAgent {
+		return nil, fmt.Errorf("session %q is not a PTY/Agent session", id)
 	}
 	if s.Status == StatusRunning {
 		return nil, fmt.Errorf("session %q is already running", id)
@@ -240,8 +259,8 @@ func (m *Manager) StopPTYSession(id string) error {
 	if !ok {
 		return fmt.Errorf("session %q not found", id)
 	}
-	if s.Kind != SessionKindPTY {
-		return fmt.Errorf("session %q is not a PTY session", id)
+	if s.Kind != SessionKindPTY && s.Kind != SessionKindAgent {
+		return fmt.Errorf("session %q is not a PTY/Agent session", id)
 	}
 	runtime, ok := m.ptys[id]
 	if !ok {
@@ -274,6 +293,40 @@ func (m *Manager) StopAllProcesses() {
 		}
 		delete(m.ptys, id)
 	}
+}
+
+func (m *Manager) StartTaskSessions(ctx context.Context, taskID string, cols, rows int) error {
+	for _, s := range m.sessions {
+		if s.TaskID == taskID && (s.Kind == SessionKindPTY || s.Kind == SessionKindAgent) {
+			if s.Status != StatusRunning {
+				_, err := m.StartPTYSession(ctx, s.ID, cols, rows)
+				if err != nil {
+					return fmt.Errorf("failed to start session %s: %w", s.ID, err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (m *Manager) StopTaskSessions(taskID string) {
+	for _, s := range m.sessions {
+		if s.TaskID == taskID && (s.Kind == SessionKindPTY || s.Kind == SessionKindAgent) {
+			if s.Status == StatusRunning {
+				m.StopPTYSession(s.ID)
+			}
+		}
+	}
+}
+
+func (m *Manager) SessionsByTask(taskID string) []Session {
+	var result []Session
+	for _, s := range m.sessions {
+		if s.TaskID == taskID {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 func (m *Manager) AppendExitLog(id string, err error) bool {
@@ -354,19 +407,107 @@ func (m *Manager) handleCSI(s *Session, text string, start int) int {
 			m.eraseLine(s, params)
 		case 'J':
 			m.eraseDisplay(s, params)
+		case 'A':
+			m.setOutputRow(s, s.outputRow-firstANSIParam(params, 1))
+		case 'B':
+			m.setOutputRow(s, s.outputRow+firstANSIParam(params, 1))
+		case 'C':
+			m.setOutputCol(s, s.outputCol+firstANSIParam(params, 1))
+		case 'D':
+			m.setOutputCol(s, s.outputCol-firstANSIParam(params, 1))
+		case 'E':
+			m.setOutputRow(s, s.outputRow+firstANSIParam(params, 1))
+			m.setOutputCol(s, 0)
+		case 'F':
+			m.setOutputRow(s, s.outputRow-firstANSIParam(params, 1))
+			m.setOutputCol(s, 0)
+		case 'd':
+			m.setOutputRow(s, firstANSIParam(params, 1)-1)
 		case 'G':
 			m.setOutputCol(s, firstANSIParam(params, 1)-1)
 		case 'H', 'f':
 			row, col := cursorPosition(params)
-			if row == 1 && col == 1 && logsAreBlank(s.Logs) {
+			if row == 1 && col == 1 {
 				s.Logs = nil
 			}
 			m.setOutputRow(s, row-1)
 			m.setOutputCol(s, col-1)
+		case 'm':
+			if params == "" || params == "0" || params == "00" {
+				s.CurrentSGR = ""
+			} else {
+				if s.CurrentSGR == "" {
+					s.CurrentSGR = compactSGR(params)
+				} else {
+					s.CurrentSGR = compactSGR(s.CurrentSGR + ";" + params)
+				}
+			}
+		case 's':
+			s.savedRow = s.outputRow
+			s.savedCol = s.outputCol
+		case 'u':
+			m.setOutputRow(s, s.savedRow)
+			m.setOutputCol(s, s.savedCol)
 		}
 		return i + 1
 	}
 	return len(text)
+}
+
+func compactSGR(sgr string) string {
+	parts := strings.Split(sgr, ";")
+	var fg []string
+	var bg []string
+	var attrs []string
+
+	for i := 0; i < len(parts); {
+		p := parts[i]
+		if p == "0" || p == "00" || p == "" {
+			fg, bg, attrs = nil, nil, nil
+			i++
+			continue
+		}
+		if p == "38" || p == "48" {
+			if i+2 < len(parts) && parts[i+1] == "5" {
+				if p == "38" {
+					fg = parts[i : i+3]
+				} else {
+					bg = parts[i : i+3]
+				}
+				i += 3
+				continue
+			}
+			if i+4 < len(parts) && parts[i+1] == "2" {
+				if p == "38" {
+					fg = parts[i : i+5]
+				} else {
+					bg = parts[i : i+5]
+				}
+				i += 5
+				continue
+			}
+		}
+
+		val, _ := strconv.Atoi(p)
+		if (val >= 30 && val <= 37) || (val >= 90 && val <= 97) || val == 39 {
+			fg = []string{p}
+		} else if (val >= 40 && val <= 47) || (val >= 100 && val <= 107) || val == 49 {
+			bg = []string{p}
+		} else {
+			attrs = append(attrs, p)
+		}
+		i++
+	}
+
+	if len(attrs) > 10 {
+		attrs = attrs[len(attrs)-10:]
+	}
+
+	var res []string
+	res = append(res, attrs...)
+	res = append(res, fg...)
+	res = append(res, bg...)
+	return strings.Join(res, ";")
 }
 
 func skipOSC(text string, start int) int {
@@ -383,53 +524,102 @@ func skipOSC(text string, start int) int {
 
 func (m *Manager) eraseLine(s *Session, params string) {
 	m.ensureOutputLine(s)
-	line := []rune(s.Logs[s.outputRow])
+	line := s.Cells[s.outputRow]
 	switch params {
 	case "2":
-		s.Logs[s.outputRow] = ""
+		line = nil
 		s.outputCol = 0
 	case "1":
 		if s.outputCol > len(line) {
 			s.outputCol = len(line)
 		}
 		for i := 0; i < s.outputCol; i++ {
-			line[i] = ' '
+			line[i] = Cell{Char: ' '}
 		}
-		s.Logs[s.outputRow] = string(line)
 	default:
 		if s.outputCol < len(line) {
-			s.Logs[s.outputRow] = string(line[:s.outputCol])
+			line = line[:s.outputCol]
+		}
+	}
+	s.Cells[s.outputRow] = line
+	s.Logs[s.outputRow] = renderCells(line)
+}
+func (m *Manager) eraseDisplay(s *Session, params string) {
+	switch params {
+	case "2", "3":
+		s.Logs = nil
+		s.Cells = nil
+		s.outputRow = 0
+		s.outputCol = 0
+	case "1":
+		// clear from start of screen to cursor
+		if s.outputRow > 0 && s.outputRow < len(s.Logs) {
+			s.Logs = s.Logs[s.outputRow:]
+			s.Cells = s.Cells[s.outputRow:]
+		}
+		s.outputRow = 0
+		m.ensureOutputLine(s)
+		line := s.Cells[s.outputRow]
+		for i := 0; i < s.outputCol && i < len(line); i++ {
+			line[i] = Cell{Char: ' '}
+		}
+		s.Cells[s.outputRow] = line
+		s.Logs[s.outputRow] = renderCells(line)
+	case "0", "":
+		// clear from cursor to end of screen
+		m.ensureOutputLine(s)
+		line := s.Cells[s.outputRow]
+		if s.outputCol < len(line) {
+			line = line[:s.outputCol]
+		}
+		s.Cells[s.outputRow] = line
+		s.Logs[s.outputRow] = renderCells(line)
+		if s.outputRow+1 < len(s.Logs) {
+			s.Logs = s.Logs[:s.outputRow+1]
+			s.Cells = s.Cells[:s.outputRow+1]
 		}
 	}
 }
 
-func (m *Manager) eraseDisplay(s *Session, params string) {
-	if params != "2" && params != "3" {
-		return
+func renderCells(cells []Cell) string {
+	var out strings.Builder
+	currentSGR := ""
+	for _, c := range cells {
+		if c.SGR != currentSGR {
+			out.WriteString("\x1b[0m")
+			if c.SGR != "" {
+				out.WriteString("\x1b[" + c.SGR + "m")
+			}
+			currentSGR = c.SGR
+		}
+		out.WriteRune(c.Char)
 	}
-	s.Logs = nil
-	s.outputRow = 0
-	s.outputCol = 0
+	if currentSGR != "" {
+		out.WriteString("\x1b[0m")
+	}
+	return out.String()
 }
 
 func (m *Manager) writeOutputRune(s *Session, r rune) {
 	m.ensureOutputLine(s)
-	line := []rune(s.Logs[s.outputRow])
+	line := s.Cells[s.outputRow]
 	for len(line) < s.outputCol {
-		line = append(line, ' ')
+		line = append(line, Cell{Char: ' '})
 	}
+	cell := Cell{Char: r, SGR: s.CurrentSGR}
 	if s.outputCol < len(line) {
-		line[s.outputCol] = r
+		line[s.outputCol] = cell
 	} else {
-		line = append(line, r)
+		line = append(line, cell)
 	}
 	s.outputCol++
-	s.Logs[s.outputRow] = string(line)
+	s.Cells[s.outputRow] = line
+	s.Logs[s.outputRow] = renderCells(line)
 }
 
 func (m *Manager) deleteLastLogRune(s *Session) {
 	m.ensureOutputLine(s)
-	line := []rune(s.Logs[s.outputRow])
+	line := s.Cells[s.outputRow]
 	if s.outputCol > 0 {
 		s.outputCol--
 	}
@@ -438,7 +628,8 @@ func (m *Manager) deleteLastLogRune(s *Session) {
 	} else if len(line) > 0 {
 		line = line[:len(line)-1]
 	}
-	s.Logs[s.outputRow] = string(line)
+	s.Cells[s.outputRow] = line
+	s.Logs[s.outputRow] = renderCells(line)
 }
 
 func (m *Manager) ensureOutputLine(s *Session) {
@@ -451,6 +642,9 @@ func (m *Manager) ensureOutputLine(s *Session) {
 		if maxLogs := m.effectiveMaxLogs(); len(s.Logs) >= maxLogs && s.outputRow >= maxLogs {
 			s.outputRow = maxLogs - 1
 		}
+	}
+	for len(s.Cells) < len(s.Logs) {
+		s.Cells = append(s.Cells, nil)
 	}
 }
 
@@ -525,8 +719,15 @@ func (m *Manager) appendLog(s *Session, line string) {
 	}
 	if len(s.Logs) < maxLogs {
 		s.Logs = append(s.Logs, line)
+		for len(s.Cells) < len(s.Logs) {
+			s.Cells = append(s.Cells, nil)
+		}
 		return
 	}
 	copy(s.Logs, s.Logs[1:])
 	s.Logs[len(s.Logs)-1] = line
+	if len(s.Cells) > 0 {
+		copy(s.Cells, s.Cells[1:])
+		s.Cells[len(s.Cells)-1] = nil
+	}
 }

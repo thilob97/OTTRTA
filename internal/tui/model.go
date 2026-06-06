@@ -2,69 +2,117 @@ package tui
 
 import (
 	"context"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/handyfun97/ottrta/internal/event"
 	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/handyfun97/ottrta/internal/task"
 )
-
-const defaultTickInterval = time.Second
 
 type focusPanel int
 
 const (
-	focusSessions focusPanel = iota
+	focusTasks focusPanel = iota
+	focusSessions
 	focusLogs
 )
 
 type UIMode string
 
 const (
-	UIModeMonitor UIMode = "monitor"
-	UIModeAttach  UIMode = "attach"
+	UIModeMonitor  UIMode = "monitor"
+	UIModeAttach   UIMode = "attach"
+	UIModeRename   UIMode = "rename"
+	UIModeNewAgent UIMode = "new-agent"
 )
 
 type Model struct {
-	manager           session.Manager
-	selected          int
-	focus             focusPanel
-	width             int
-	height            int
-	tickInterval      time.Duration
-	mode              UIMode
-	attachedSessionID string
-	processEvents     map[string]<-chan event.ProcessMsg
-	ptyEvents         map[string]<-chan event.PTYMsg
+	manager                session.Manager
+	taskManager            *task.Manager
+	selectedSession        int
+	selectedTask           int
+	focus                  focusPanel
+	width                  int
+	height                 int
+	mode                   UIMode
+	attachedSessionID      string
+	renameSessionID        string
+	renameInput            string
+	newAgentWorkDirInput   string
+	newAgentCompletionHint string
+	storePath              string
+	processEvents          map[string]<-chan event.ProcessMsg
+	ptyEvents              map[string]<-chan event.PTYMsg
 }
 
 func NewModel() Model {
+	storePath, err := session.DefaultStorePath()
+	if err != nil {
+		return newDefaultModel("", err)
+	}
+	return newModelWithStorePath(storePath)
+}
+
+func newModelWithStorePath(storePath string) Model {
+	if storePath != "" {
+		sessions, err := session.LoadSessions(storePath)
+		if err == nil && len(sessions) > 0 {
+			sessionMgr := session.NewManager(sessions)
+			taskMgr := task.NewManager(&sessionMgr)
+			return newBaseModel(sessionMgr, taskMgr, storePath)
+		}
+		if err != nil {
+			return newDefaultModel(storePath, err)
+		}
+	}
+	return newDefaultModel(storePath, nil)
+}
+
+func newDefaultModel(storePath string, loadErr error) Model {
+	sessionMgr := session.NewManager(nil)
+	taskMgr := task.NewManager(&sessionMgr)
+
+	// Create default task with 3 omp sessions
+	agentReq := task.AgentRequest{Kind: session.AgentKindOmp, Count: 3}
+	taskMgr.CreateTask("Demo race task", task.TaskModeRace, agentReq, "")
+
+	m := newBaseModel(sessionMgr, taskMgr, storePath)
+	if loadErr != nil {
+		sessions := m.manager.Sessions()
+		if len(sessions) > 0 {
+			m.manager.AppendLog(sessions[0].ID, "[system] failed to load sessions: "+loadErr.Error())
+		}
+	}
+	return m
+}
+
+func newBaseModel(sessionMgr session.Manager, taskMgr *task.Manager, storePath string) Model {
 	return Model{
-		manager:       session.NewFakeManager(),
+		manager:       sessionMgr,
+		taskManager:   taskMgr,
+		selectedTask:  0,
 		focus:         focusSessions,
-		tickInterval:  defaultTickInterval,
 		mode:          UIModeMonitor,
+		storePath:     storePath,
 		processEvents: make(map[string]<-chan event.ProcessMsg),
 		ptyEvents:     make(map[string]<-chan event.PTYMsg),
 	}
 }
 
 func Run() error {
-	_, err := tea.NewProgram(NewModel()).Run()
-	return err
+	finalModel, err := tea.NewProgram(NewModel()).Run()
+	if err != nil {
+		return err
+	}
+	m, ok := finalModel.(Model)
+	if !ok || m.storePath == "" {
+		return nil
+	}
+	return session.SaveSessions(m.storePath, m.manager.Sessions())
 }
 
 func (m Model) Init() tea.Cmd {
-	return tick(m.tickInterval)
-}
-
-func tick(interval time.Duration) tea.Cmd {
-	if interval <= 0 {
-		interval = defaultTickInterval
-	}
-	return tea.Tick(interval, func(t time.Time) tea.Msg {
-		return event.FakeLogTick{At: t}
-	})
+	return nil
 }
 
 func processContext() context.Context {

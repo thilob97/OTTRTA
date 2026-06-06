@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,108 +11,10 @@ import (
 	"github.com/handyfun97/ottrta/internal/event"
 )
 
-func TestNewFakeManagerCreatesRequiredSessions(t *testing.T) {
-	manager := NewFakeManager()
-	sessions := manager.Sessions()
-
-	want := []struct {
-		name    string
-		kind    SessionKind
-		status  Status
-		command string
-		args    []string
-	}{
-		{name: "fake-claude-1", kind: SessionKindFake, status: StatusRunning},
-		{name: "fake-claude-2", kind: SessionKindFake, status: StatusStopped},
-		{name: "fake-pi", kind: SessionKindFake, status: StatusRunning},
-		{name: "real-go-version", kind: SessionKindProcess, status: StatusStopped, command: "go", args: []string{"version"}},
-		{name: "shell-1", kind: SessionKindPTY, status: StatusStopped, command: DefaultShellCommand()},
-	}
-	if len(sessions) != len(want) {
-		t.Fatalf("got %d sessions, want %d", len(sessions), len(want))
-	}
-	for i, want := range want {
-		got := sessions[i]
-		if got.Name != want.name || got.ID != want.name {
-			t.Fatalf("session %d = %q/%q, want %q", i, got.ID, got.Name, want.name)
-		}
-		if got.Kind != want.kind || got.Status != want.status {
-			t.Fatalf("session %q kind/status = %s/%s, want %s/%s", got.ID, got.Kind, got.Status, want.kind, want.status)
-		}
-		if got.Command != want.command {
-			t.Fatalf("session %q command = %q, want %q", got.ID, got.Command, want.command)
-		}
-		if strings.Join(got.Args, "\x00") != strings.Join(want.args, "\x00") {
-			t.Fatalf("session %q args = %v, want %v", got.ID, got.Args, want.args)
-		}
-	}
-}
-
-func TestToggleSelectedFakeSession(t *testing.T) {
-	manager := NewFakeManager()
-
-	if !manager.Toggle(0) {
-		t.Fatal("toggle returned false for valid fake index")
-	}
-	s, _ := manager.Session(0)
-	if s.Status != StatusStopped {
-		t.Fatalf("status = %s, want stopped", s.Status)
-	}
-
-	if !manager.Toggle(0) {
-		t.Fatal("second toggle returned false for valid fake index")
-	}
-	if s.Status != StatusRunning {
-		t.Fatalf("status = %s, want running", s.Status)
-	}
-
-	if manager.Toggle(3) {
-		t.Fatal("toggle returned true for process session")
-	}
-	if manager.Toggle(4) {
-		t.Fatal("toggle returned true for PTY session")
-	}
-	if manager.Toggle(99) {
-		t.Fatal("toggle returned true for invalid index")
-	}
-}
-
-func TestAppendLogsToRunningFakeOnly(t *testing.T) {
-	manager := NewFakeManager()
-	process, _ := manager.SessionByID("real-go-version")
-	process.Status = StatusRunning
-	before := manager.Sessions()
-
-	appended := manager.AppendLogsToRunning()
-	if appended != 2 {
-		t.Fatalf("appended = %d, want 2", appended)
-	}
-	after := manager.Sessions()
-
-	if len(after[0].Logs) != len(before[0].Logs)+1 {
-		t.Fatalf("running fake logs = %d, want %d", len(after[0].Logs), len(before[0].Logs)+1)
-	}
-	if len(after[1].Logs) != len(before[1].Logs) {
-		t.Fatalf("stopped fake logs = %d, want %d", len(after[1].Logs), len(before[1].Logs))
-	}
-	if len(after[2].Logs) != len(before[2].Logs)+1 {
-		t.Fatalf("running fake logs = %d, want %d", len(after[2].Logs), len(before[2].Logs)+1)
-	}
-	if len(after[3].Logs) != len(before[3].Logs) {
-		t.Fatalf("process logs = %d, want %d", len(after[3].Logs), len(before[3].Logs))
-	}
-	if len(after[4].Logs) != len(before[4].Logs) {
-		t.Fatalf("PTY logs = %d, want %d", len(after[4].Logs), len(before[4].Logs))
-	}
-	if !strings.Contains(after[0].Logs[len(after[0].Logs)-1], "fake-claude-1") {
-		t.Fatalf("new log %q does not identify session", after[0].Logs[len(after[0].Logs)-1])
-	}
-}
-
 func TestAppendLogTargetsSessionAndBoundsLogs(t *testing.T) {
 	manager := NewManager([]Session{
-		{ID: "one", Name: "one", Kind: SessionKindFake, Status: StatusRunning},
-		{ID: "two", Name: "two", Kind: SessionKindFake, Status: StatusRunning},
+		{ID: "one", Name: "one", Kind: SessionKindProcess, Status: StatusRunning},
+		{ID: "two", Name: "two", Kind: SessionKindProcess, Status: StatusRunning},
 	})
 	manager.maxLogs = 2
 
@@ -129,6 +32,99 @@ func TestAppendLogTargetsSessionAndBoundsLogs(t *testing.T) {
 	}
 	if len(two.Logs) != 0 {
 		t.Fatalf("two logs = %v, want none", two.Logs)
+	}
+}
+
+func TestRenameSessionTrimsAndKeepsIdentity(t *testing.T) {
+	manager := NewManager([]Session{{
+		ID:      "one",
+		Name:    "old",
+		Kind:    SessionKindAgent,
+		Status:  StatusRunning,
+		TaskID:  "task-001",
+		Command: "omp",
+		Logs:    []string{"existing log"},
+		WorkDir: "work",
+		Args:    []string{"--flag"},
+	}})
+
+	if !manager.RenameSession("one", "  New Name  ") {
+		t.Fatal("RenameSession returned false for existing non-empty name")
+	}
+	s, _ := manager.SessionByID("one")
+	if s.ID != "one" {
+		t.Fatalf("ID = %q, want one", s.ID)
+	}
+	if s.Name != "New Name" {
+		t.Fatalf("Name = %q, want trimmed New Name", s.Name)
+	}
+	if s.TaskID != "task-001" || s.Status != StatusRunning || len(s.Logs) != 1 {
+		t.Fatalf("rename mutated runtime/task fields: %+v", *s)
+	}
+
+	if manager.RenameSession("one", " \t ") {
+		t.Fatal("RenameSession returned true for empty trimmed name")
+	}
+	if s.Name != "New Name" {
+		t.Fatalf("Name after empty rename = %q, want unchanged", s.Name)
+	}
+	if manager.RenameSession("missing", "name") {
+		t.Fatal("RenameSession returned true for missing session")
+	}
+}
+
+func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	want := []Session{{
+		ID:             "agent-1",
+		Name:           "Agent One",
+		Kind:           SessionKindAgent,
+		Status:         StatusRunning,
+		Command:        "omp",
+		Args:           []string{"--model", "default"},
+		WorkDir:        "work",
+		AgentKind:      AgentKindOmp,
+		TaskID:         "task-001",
+		NeedsAttention: true,
+		Logs:           []string{"runtime log"},
+		Cells:          [][]Cell{{{Char: 'x', SGR: "31"}}},
+		CurrentSGR:     "31",
+	}}
+
+	if err := SaveSessions(path, want); err != nil {
+		t.Fatalf("SaveSessions returned error: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	raw := string(data)
+	for _, forbidden := range []string{"runtime log", "needsAttention", "\"status\"", "\"cells\"", "\"currentSGR\""} {
+		if strings.Contains(raw, forbidden) {
+			t.Fatalf("stored JSON contains runtime-only field %q:\n%s", forbidden, raw)
+		}
+	}
+
+	got, err := LoadSessions(path)
+	if err != nil {
+		t.Fatalf("LoadSessions returned error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("loaded %d sessions, want 1", len(got))
+	}
+	s := got[0]
+	if s.ID != "agent-1" || s.Name != "Agent One" || s.Kind != SessionKindAgent || s.Command != "omp" ||
+		s.WorkDir != "work" || s.AgentKind != AgentKindOmp || s.TaskID != "task-001" {
+		t.Fatalf("loaded definition mismatch: %+v", s)
+	}
+	if strings.Join(s.Args, ",") != "--model,default" {
+		t.Fatalf("Args = %v, want copied args", s.Args)
+	}
+	if s.Status != StatusStopped {
+		t.Fatalf("Status = %s, want stopped", s.Status)
+	}
+	if s.NeedsAttention || len(s.Logs) != 0 || len(s.Cells) != 0 || s.CurrentSGR != "" {
+		t.Fatalf("loaded runtime fields were not reset: %+v", s)
 	}
 }
 
@@ -211,7 +207,9 @@ func TestAppendOutputHandlesPowerShellCursorPositioning(t *testing.T) {
 }
 
 func TestStartGoVersionProcessStreamsAndStops(t *testing.T) {
-	manager := NewFakeManager()
+	manager := NewManager([]Session{
+		{ID: "real-go-version", Name: "real-go-version", Kind: SessionKindProcess, Status: StatusStopped, Command: "go", Args: []string{"version"}},
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -258,15 +256,16 @@ func TestStartGoVersionProcessStreamsAndStops(t *testing.T) {
 }
 
 func TestStopSessionErrorPaths(t *testing.T) {
-	manager := NewFakeManager()
-
+	manager := NewManager([]Session{
+		{ID: "missing", Name: "missing", Kind: SessionKindProcess, Status: StatusStopped, Command: "missing"},
+	})
 	if err := manager.StopSession("missing"); err == nil {
 		t.Fatal("StopSession missing session error = nil")
 	}
-	if err := manager.StopSession("fake-claude-1"); err == nil {
-		t.Fatal("StopSession fake session error = nil")
+	if err := manager.StopSession("nonexistent"); err == nil {
+		t.Fatal("StopSession nonexistent session error = nil")
 	}
-	if err := manager.StopSession("real-go-version"); err == nil {
+	if err := manager.StopSession("missing"); err == nil {
 		t.Fatal("StopSession stopped process error = nil")
 	}
 }
@@ -304,25 +303,26 @@ func TestDefaultShellCommandResolution(t *testing.T) {
 }
 
 func TestPTYSessionErrorPaths(t *testing.T) {
-	manager := NewFakeManager()
-
+	manager := NewManager([]Session{
+		{ID: "missing", Name: "missing", Kind: SessionKindPTY, Status: StatusStopped, Command: "missing"},
+	})
 	if _, err := manager.StartPTYSession(context.Background(), "missing", 80, 24); err == nil {
 		t.Fatal("StartPTYSession missing session error = nil")
 	}
-	if _, err := manager.StartPTYSession(context.Background(), "fake-claude-1", 80, 24); err == nil {
-		t.Fatal("StartPTYSession fake session error = nil")
+	if _, err := manager.StartPTYSession(context.Background(), "nonexistent", 80, 24); err == nil {
+		t.Fatal("StartPTYSession nonexistent session error = nil")
 	}
-	if err := manager.WritePTYSession("shell-1", []byte("x")); err == nil {
-		t.Fatal("WritePTYSession stopped PTY error = nil")
+	if err := manager.WritePTYSession("missing", []byte("x")); err == nil {
+		t.Fatal("WritePTYSession not-running PTY error = nil")
 	}
-	if err := manager.ResizePTYSession("shell-1", 80, 24); err == nil {
-		t.Fatal("ResizePTYSession stopped PTY error = nil")
+	if err := manager.ResizePTYSession("missing", 80, 24); err == nil {
+		t.Fatal("ResizePTYSession not-running PTY error = nil")
 	}
-	if err := manager.StopPTYSession("fake-claude-1"); err == nil {
-		t.Fatal("StopPTYSession fake session error = nil")
+	if err := manager.StopPTYSession("nonexistent"); err == nil {
+		t.Fatal("StopPTYSession nonexistent session error = nil")
 	}
-	if err := manager.StopPTYSession("shell-1"); err == nil {
-		t.Fatal("StopPTYSession stopped PTY error = nil")
+	if err := manager.StopPTYSession("missing"); err == nil {
+		t.Fatal("StopPTYSession not-running PTY error = nil")
 	}
 }
 
