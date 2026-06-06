@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -563,4 +564,38 @@ func modelFromUpdate(t *testing.T, updated tea.Model) Model {
 
 func keyRune(r rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+}
+
+func TestSessionListScrolling(t *testing.T) {
+	m := testModel()
+	var sessions []session.Session
+	for i := 0; i < 10; i++ {
+		sessions = append(sessions, session.Session{
+			ID:     fmt.Sprintf("session-%d", i),
+			Name:   fmt.Sprintf("Session %d", i),
+			Kind:   session.SessionKindPTY,
+			Status: session.StatusStopped,
+		})
+	}
+	m.manager = session.NewManager(sessions)
+
+	maxHeight := 22
+
+	m.selectedSession = 0
+	rendered := m.renderSessionList(120, maxHeight)
+	if !strings.Contains(rendered, "session-0") || !strings.Contains(rendered, "session-1") {
+		t.Fatalf("rendered sessions did not include session-0 or session-1 when selected: %s", rendered)
+	}
+	if strings.Contains(rendered, "session-8") {
+		t.Fatalf("rendered sessions included off-screen session-8: %s", rendered)
+	}
+
+	m.selectedSession = 8
+	rendered = m.renderSessionList(120, maxHeight)
+	if !strings.Contains(rendered, "session-8") || !strings.Contains(rendered, "session-9") {
+		t.Fatalf("rendered sessions did not include session-8 or session-9 when selected: %s", rendered)
+	}
+	if strings.Contains(rendered, "session-0") {
+		t.Fatalf("rendered sessions included off-screen session-0 after scrolling: %s", rendered)
+	}
 }

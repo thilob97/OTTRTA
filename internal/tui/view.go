@@ -216,9 +216,8 @@ func (m Model) renderAttachView(width, height, panelHeight int) string {
 
 func (m Model) renderSessionList(width int, maxHeight int) string {
 	sessions := m.manager.Sessions()
-	lines := []string{titleStyle.Render("Sessions")}
 	if len(sessions) == 0 {
-		return strings.Join(append(lines, mutedStyle.Render("No sessions")), "\n")
+		return strings.Join([]string{titleStyle.Render("Sessions"), mutedStyle.Render("No sessions")}, "\n")
 	}
 
 	cardWidth := (width - 7) / 2
@@ -229,7 +228,12 @@ func (m Model) renderSessionList(width int, maxHeight int) string {
 		cardWidth = 16
 	}
 
-	usedHeight := 1 // "Sessions" title
+	type rowInfo struct {
+		height   int
+		rendered string
+	}
+	var rows []rowInfo
+
 	for i := 0; i < len(sessions); i += 2 {
 		left := m.renderSessionCard(&sessions[i], cardWidth, i == m.selectedSession)
 		leftHeight := strings.Count(left, "\n") + 1
@@ -249,12 +253,47 @@ func (m Model) renderSessionList(width int, maxHeight int) string {
 				rowHeight = rightHeight
 			}
 		}
+		rows = append(rows, rowInfo{
+			height:   rowHeight,
+			rendered: row,
+		})
+	}
 
-		if maxHeight > 0 && usedHeight+rowHeight > maxHeight {
+	availHeight := maxHeight - 1 // 1 line for the "Sessions" title
+	if availHeight < 5 {
+		availHeight = 5
+	}
+
+	selectedRow := m.selectedSession / 2
+	if selectedRow >= len(rows) {
+		selectedRow = len(rows) - 1
+	}
+	if selectedRow < 0 {
+		selectedRow = 0
+	}
+
+	// Calculate startRow going backwards from selectedRow to fit within availHeight
+	startRow := selectedRow
+	sum := 0
+	if selectedRow < len(rows) {
+		sum = rows[selectedRow].height
+	}
+	for r := selectedRow - 1; r >= 0; r-- {
+		if sum+rows[r].height > availHeight {
 			break
 		}
-		lines = append(lines, row)
-		usedHeight += rowHeight
+		startRow = r
+		sum += rows[r].height
+	}
+
+	lines := []string{titleStyle.Render("Sessions")}
+	usedHeight := 1
+	for r := startRow; r < len(rows); r++ {
+		if usedHeight+rows[r].height > maxHeight {
+			break
+		}
+		lines = append(lines, rows[r].rendered)
+		usedHeight += rows[r].height
 	}
 	return strings.Join(lines, "\n")
 }
