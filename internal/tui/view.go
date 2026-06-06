@@ -636,7 +636,11 @@ func (m Model) renderFooter() string {
 	if s, ok := m.manager.Session(m.selectedSession); ok && s.NeedsAttention {
 		return "selected session needs attention: press enter to attach"
 	}
-	return "MONITOR | j/k select  h/l focus  space start/stop  enter attach  n new agent  r rename  x remove  q quit"
+	suffix := ""
+	if m.updateAvailable != "" {
+		suffix = fmt.Sprintf(" | UPDATE: %s is available (run 'ottrta update')", m.updateAvailable)
+	}
+	return "MONITOR | j/k/h/l navigate  space start/stop  enter attach  n new agent  r rename  x remove  q quit" + suffix
 }
 
 func renderStatus(status session.Status) string {

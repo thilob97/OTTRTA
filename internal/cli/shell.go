@@ -3,8 +3,8 @@ package cli
 import (
 	"io"
 
-	"github.com/thilob97/ottrta/internal/session"
 	"github.com/spf13/cobra"
+	"github.com/thilob97/ottrta/internal/session"
 )
 
 type shellOptions struct {

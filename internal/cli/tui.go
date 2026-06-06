@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"github.com/thilob97/ottrta/internal/tui"
 	"github.com/spf13/cobra"
+	"github.com/thilob97/ottrta/internal/tui"
 )
 
 func newTUICommand() *cobra.Command {
@@ -16,5 +16,5 @@ func newTUICommand() *cobra.Command {
 }
 
 func runTUI() error {
-	return tui.Run()
+	return tui.Run(Version)
 }

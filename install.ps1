@@ -59,6 +59,7 @@ if (-not (Test-Path $exePath)) {
     Write-Error "Could not find ottrta.exe in the extracted archive."
     exit 1
 }
+$rtaExePath = Join-Path $tempDir "rta.exe"
 
 # Install directory: $HOME\.ottrta\bin
 $installDir = Join-Path $HOME ".ottrta\bin"
@@ -69,6 +70,10 @@ if (-not (Test-Path $installDir)) {
 $targetPath = Join-Path $installDir "ottrta.exe"
 Copy-Item -Path $exePath -Destination $targetPath -Force
 
+if (Test-Path $rtaExePath) {
+    $targetRtaPath = Join-Path $installDir "rta.exe"
+    Copy-Item -Path $rtaExePath -Destination $targetRtaPath -Force
+}
 # Clean up temp
 Remove-Item -Recurse -Force $tempDir
 
@@ -91,4 +96,4 @@ if (-not $alreadyInPath) {
     Write-Host "Please restart your terminal to apply the PATH changes."
 }
 
-Write-Host "Successfully installed ottrta!"
+Write-Host "Successfully installed ottrta and rta!"

@@ -6,7 +6,22 @@ before:
     - go mod tidy
 
 builds:
-  - env:
+  - id: ottrta
+    binary: ottrta
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/ottrta/main.go
+
+  - id: rta
+    binary: rta
+    env:
       - CGO_ENABLED=0
     goos:
       - linux

@@ -57,8 +57,8 @@ trap CLEANUP EXIT
 
 curl -fsSL "$URL" -o "$TEMP_DIR/$FILENAME"
 
-# Extract binary
-tar -xzf "$TEMP_DIR/$FILENAME" -C "$TEMP_DIR" ottrta
+# Extract binaries
+tar -xzf "$TEMP_DIR/$FILENAME" -C "$TEMP_DIR" ottrta rta
 
 # Determine install directory
 INSTALL_DIR="/usr/local/bin"
@@ -67,20 +67,23 @@ if [ ! -w "$INSTALL_DIR" ]; then
     if command -v sudo >/dev/null 2>&1; then
         echo "Installing to $INSTALL_DIR (requires sudo)..."
         sudo mv "$TEMP_DIR/ottrta" "$INSTALL_DIR/ottrta"
-        sudo chmod +x "$INSTALL_DIR/ottrta"
+        sudo mv "$TEMP_DIR/rta" "$INSTALL_DIR/rta"
+        sudo chmod +x "$INSTALL_DIR/ottrta" "$INSTALL_DIR/rta"
     else
         INSTALL_DIR="$HOME/.local/bin"
         mkdir -p "$INSTALL_DIR"
         echo "Installing to $INSTALL_DIR..."
         mv "$TEMP_DIR/ottrta" "$INSTALL_DIR/ottrta"
-        chmod +x "$INSTALL_DIR/ottrta"
+        mv "$TEMP_DIR/rta" "$INSTALL_DIR/rta"
+        chmod +x "$INSTALL_DIR/ottrta" "$INSTALL_DIR/rta"
         echo "Please ensure $INSTALL_DIR is in your PATH."
     fi
 else
     echo "Installing to $INSTALL_DIR..."
     mv "$TEMP_DIR/ottrta" "$INSTALL_DIR/ottrta"
-    chmod +x "$INSTALL_DIR/ottrta"
+    mv "$TEMP_DIR/rta" "$INSTALL_DIR/rta"
+    chmod +x "$INSTALL_DIR/ottrta" "$INSTALL_DIR/rta"
 fi
 
-echo "Successfully installed ottrta!"
-ottrta version || true
+echo "Successfully installed ottrta and rta!"
+rta version || true

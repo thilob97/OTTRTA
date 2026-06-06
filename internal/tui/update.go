@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/thilob97/ottrta/internal/agent"
@@ -46,6 +49,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = UIModeMonitor
 			m.attachedSessionID = ""
 		}
+		return m, nil
+	case updateAvailableMsg:
+		m.updateAvailable = msg.latestVersion
 		return m, nil
 	default:
 		return m, nil
@@ -171,7 +177,6 @@ func (m Model) updateRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 }
-
 
 func (m Model) updateNewAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.newAgentStep == 0 {
@@ -490,4 +495,37 @@ func (m Model) ptyRows() int {
 		return 5
 	}
 	return rows
+}
+
+type updateAvailableMsg struct {
+	latestVersion string
+}
+
+func (m Model) checkForUpdateCmd() tea.Cmd {
+	return func() tea.Msg {
+		latest, err := checkForUpdate()
+		if err == nil && latest != m.version {
+			return updateAvailableMsg{latestVersion: latest}
+		}
+		return nil
+	}
+}
+
+func checkForUpdate() (string, error) {
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+	resp, err := client.Get("https://api.github.com/repos/thilob97/ottrta/releases/latest")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var rel struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", err
+	}
+	return rel.TagName, nil
 }

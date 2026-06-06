@@ -48,6 +48,8 @@ type Model struct {
 	storePath              string
 	processEvents          map[string]<-chan event.ProcessMsg
 	ptyEvents              map[string]<-chan event.PTYMsg
+	version                string
+	updateAvailable        string
 }
 
 func NewModel() Model {
@@ -103,20 +105,22 @@ func newBaseModel(sessionMgr session.Manager, taskMgr *task.Manager, storePath s
 	}
 }
 
-func Run() error {
-	finalModel, err := tea.NewProgram(NewModel(), tea.WithAltScreen()).Run()
+func Run(version string) error {
+	m := NewModel()
+	m.version = version
+	finalModel, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	if err != nil {
 		return err
 	}
-	m, ok := finalModel.(Model)
-	if !ok || m.storePath == "" {
+	m = finalModel.(Model)
+	if m.storePath == "" {
 		return nil
 	}
 	return session.SaveSessions(m.storePath, m.manager.Sessions())
 }
 
 func (m Model) Init() tea.Cmd {
-	return tickAnimation()
+	return tea.Batch(tickAnimation(), m.checkForUpdateCmd())
 }
 
 func tickAnimation() tea.Cmd {
