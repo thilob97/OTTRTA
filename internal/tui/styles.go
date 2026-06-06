@@ -22,11 +22,10 @@ var (
 					BorderForeground(lipgloss.Color("63")).
 					Background(lipgloss.Color("235"))
 
-	// Terminal panel: dark background for native feel
+	// Terminal panel: same background as session panel
 	baseTermStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			Padding(0, 1).
-			Background(lipgloss.Color("0"))
+			Padding(0, 1)
 
 	focusedTermStyle = baseTermStyle.Copy().
 				BorderForeground(lipgloss.Color("63"))
@@ -38,8 +37,7 @@ var (
 	attachPanelStyle = lipgloss.NewStyle().
 				Border(lipgloss.ThickBorder()).
 				BorderForeground(lipgloss.Color("63")).
-				Padding(0, 1).
-				Background(lipgloss.Color("0"))
+				Padding(0, 1)
 
 	modalStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
