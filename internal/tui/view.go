@@ -142,12 +142,11 @@ func (m Model) View() string {
 
 	taskInfo := m.renderTaskInfo()
 	taskInfoLines := strings.Count(taskInfo, "\n") + 1
-	// Calculate available height for session list (panel height minus task info, title, and margins)
-	availableSessionHeight := panelHeight - taskInfoLines - 2 // -2 for "Sessions" title and newline
+	availableSessionHeight := panelHeight - taskInfoLines - 2
 	if availableSessionHeight < 5 {
 		availableSessionHeight = 5
 	}
-	
+
 	left := panelStyle(m.focus == focusSessions).
 		Width(leftWidth).
 		Height(panelHeight).
@@ -229,12 +228,12 @@ func (m Model) renderSessionList(width int, maxHeight int) string {
 	if cardWidth < 16 {
 		cardWidth = 16
 	}
-	
+
 	usedHeight := 1 // "Sessions" title
 	for i := 0; i < len(sessions); i += 2 {
 		left := m.renderSessionCard(&sessions[i], cardWidth, i == m.selectedSession)
 		leftHeight := strings.Count(left, "\n") + 1
-		
+
 		var row string
 		var rowHeight int
 		if i+1 >= len(sessions) {
@@ -250,7 +249,7 @@ func (m Model) renderSessionList(width int, maxHeight int) string {
 				rowHeight = rightHeight
 			}
 		}
-		
+
 		if maxHeight > 0 && usedHeight+rowHeight > maxHeight {
 			break
 		}
@@ -422,16 +421,51 @@ func displayLogLines(logs []string) []string {
 	return sanitized
 }
 
+// sanitizeLogText strips destructive terminal control sequences (clear screen,
+// cursor movement, BEL, etc.) but keeps SGR color/style sequences (ending in 'm')
+// so log output retains its colors.
 func sanitizeLogText(text string) string {
 	text = strings.ReplaceAll(text, "\r", "")
 	text = strings.ReplaceAll(text, "\t", "    ")
 	var builder strings.Builder
-	for _, r := range text {
-		if r >= 32 && r != 127 {
-			builder.WriteRune(r)
-		} else if r == '\n' {
-			builder.WriteRune(r)
+	i := 0
+	for i < len(text) {
+		c := text[i]
+		// Detect start of an ANSI escape sequence
+		if c == '\x1b' && i+1 < len(text) && text[i+1] == '[' {
+			// Capture the full CSI sequence: ESC [ <params> <letter>
+			start := i
+			j := i + 2 // skip ESC and [
+			for j < len(text) && !((text[j] >= 'A' && text[j] <= 'Z') || (text[j] >= 'a' && text[j] <= 'z')) {
+				j++
+			}
+			if j < len(text) {
+				terminator := text[j]
+				seq := text[start : j+1]
+				if terminator == 'm' {
+					// SGR (color/style) — keep it
+					builder.WriteString(seq)
+				}
+				// Everything else (J=clear, H/f=cursor, K=erase line, etc.) — drop
+				i = j + 1
+				continue
+			}
+			// Malformed sequence — drop the ESC
+			i++
+			continue
 		}
+		// Drop bare ESC not followed by [
+		if c == '\x1b' {
+			i++
+			continue
+		}
+		if c >= 32 && c != 127 {
+			builder.WriteByte(c)
+		} else if c == '\n' {
+			builder.WriteByte(c)
+		}
+		// Drop BEL (\x07), other control chars
+		i++
 	}
 	return builder.String()
 }
