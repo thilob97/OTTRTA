@@ -141,16 +141,23 @@ func (m Model) View() string {
 	}
 
 	taskInfo := m.renderTaskInfo()
-	taskInfoLines := strings.Count(taskInfo, "\n") + 1
-	availableSessionHeight := panelHeight - taskInfoLines - 2
+	availableSessionHeight := panelHeight - 2
+	leftContent := ""
+	if taskInfo != "" {
+		taskInfoLines := strings.Count(taskInfo, "\n") + 1
+		availableSessionHeight = panelHeight - 2 - taskInfoLines - 1
+		leftContent = taskInfo + "\n"
+	}
 	if availableSessionHeight < 5 {
 		availableSessionHeight = 5
 	}
 
+	leftContent += m.renderSessionList(leftWidth, availableSessionHeight)
+
 	left := panelStyle(m.focus == focusSessions).
 		Width(leftWidth).
 		Height(panelHeight).
-		Render(taskInfo + "\n" + m.renderSessionList(leftWidth, availableSessionHeight))
+		Render(leftContent)
 	right := termPanelStyle(m.focus == focusLogs).
 		Width(rightWidth).
 		Height(panelHeight).

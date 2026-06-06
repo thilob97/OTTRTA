@@ -16,7 +16,7 @@ var (
 	sessionCardStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("240")).
-				Padding(0, 1)
+				Padding(1, 1)
 
 	selectedSessionCardStyle = sessionCardStyle.Copy().
 					BorderForeground(lipgloss.Color("63")).
