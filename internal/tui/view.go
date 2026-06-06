@@ -141,19 +141,21 @@ func (m Model) View() string {
 	}
 
 	taskInfo := m.renderTaskInfo()
-	availableSessionHeight := panelHeight - 2
-	leftContent := ""
+	banner := renderBanner()
+	bannerLines := strings.Count(banner, "\n")
+
+	availableSessionHeight := panelHeight - 2 - bannerLines
+	leftContent := banner
 	if taskInfo != "" {
 		taskInfoLines := strings.Count(taskInfo, "\n") + 1
-		availableSessionHeight = panelHeight - 2 - taskInfoLines - 1
-		leftContent = taskInfo + "\n"
+		availableSessionHeight -= (taskInfoLines + 1)
+		leftContent += taskInfo + "\n"
 	}
 	if availableSessionHeight < 5 {
 		availableSessionHeight = 5
 	}
 
 	leftContent += m.renderSessionList(leftWidth, availableSessionHeight)
-
 	left := panelStyle(m.focus == focusSessions).
 		Width(leftWidth).
 		Height(panelHeight).
@@ -389,6 +391,13 @@ func stableImpIndex(sessionID string) int {
 		hash *= 16777619
 	}
 	return int(hash % uint32(len(impArts)))
+}
+
+func renderBanner() string {
+	banner := "  ___  _____ _____ ____  _____  _\n" +
+		" / _ \\   | |   | | |  _ \\  | | / \\\n" +
+		" \\___/   |_|   |_| |_| \\_\\ |_|/_/ \\"
+	return titleStyle.Render(banner) + "\n"
 }
 
 func (m Model) renderTaskInfo() string {
