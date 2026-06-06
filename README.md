@@ -1,6 +1,16 @@
 # OTTRTA
 
-One Terminal To Rule Them All — a small Go TUI for fake sessions, foreground process sessions, and basic PTY/ConPTY shell sessions.
+One Terminal To Rule Them All — a small Go TUI for orchestrating, monitoring, and attaching to multiple CLI-based AI agents and shell sessions.
+
+## Installation
+
+You can install `ottrta` using the automated installation script:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/handyfun97/ottrta/main/install.sh | sh
+```
+
+The script automatically detects your OS and architecture, downloads the latest release binary, and installs it to `/usr/local/bin` (or `~/.local/bin` if root permissions are not available).
 
 ## Commands
 
@@ -15,19 +25,20 @@ go run ./cmd/ottrta version
 
 ## TUI keys
 
-- `j` / `k`: move between sessions
-- `h` / `l`: switch panel focus
+- `j` / `k` (or arrow keys `up` / `down`): move vertically in the 2-column session grid
+- `h` / `l` (or arrow keys `left` / `right`): move horizontally in the 2-column session grid
 - `space`: start/stop the selected session
-- `enter`: attach to a running PTY session, otherwise focus the log panel
-- `esc`: detach from an attached PTY session
-- `n`: add a new stopped OMP agent session; enter a working directory path, use `tab` to complete directories, then `enter` creates or `esc` cancels
+- `enter`: attach immediately if session is running; otherwise focus the log panel
+- `esc`: from log panel, returns focus to the session list; from attach mode, detaches
+- `n`: add a new agent session. Asks for a **command** (e.g. `omp`, `claude`, `etc.`) and then a **working directory** (use `tab` for directory completion).
 - `r`: rename the selected session; `enter` saves and `esc` cancels
 - `x`: remove the selected session
 - `q` / `ctrl+c`: quit in monitor mode
 
 ## TUI layout
 
-- Sessions render as a two-column grid of taller, colorized imp cards.
+- A stylish custom ASCII-art OTTRTA brand banner is displayed in the top-left area.
+- Sessions render as a two-column grid of spacious, colorized imp cards showing the avatar, name, session ID, and status side-by-side.
 - The session panel stays only wide enough for two cards; extra space goes to the log panel.
 - Running sessions animate their imp banner; stopped sessions show `zZzZ`.
 - Newly created agent sessions get short AI-slop-themed imp display names; stable session IDs are still persisted and used internally.
@@ -36,7 +47,7 @@ go run ./cmd/ottrta version
 ## Persistence
 
 - `ottrta tui` saves session definitions on clean exit and reloads them on the next start.
-- Persisted data is limited to session ID, name, kind, command, args, workdir, agent kind, and task ID. Logs and task metadata are not persisted.
+- Persisted data is limited to session ID, name, kind, command, args, workdir, agent kind, and task ID. Logs are not persisted.
 
 ## v0.3 PTY sessions
 
