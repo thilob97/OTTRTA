@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/session"
 )
 
 type Manager struct {

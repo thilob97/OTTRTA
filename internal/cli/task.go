@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/handyfun97/ottrta/internal/session"
-	"github.com/handyfun97/ottrta/internal/task"
+	"github.com/thilob97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/task"
 )
 
 func newTaskCommand() *cobra.Command {

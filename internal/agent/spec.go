@@ -1,6 +1,6 @@
 package agent
 
-import "github.com/handyfun97/ottrta/internal/session"
+import "github.com/thilob97/ottrta/internal/session"
 
 type AgentSpec struct {
 	ID      string

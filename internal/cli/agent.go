@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/handyfun97/ottrta/internal/agent"
-	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/agent"
+	"github.com/thilob97/ottrta/internal/session"
 )
 
 func newAgentCommand() *cobra.Command {

@@ -3,7 +3,7 @@ package cli
 import (
 	"io"
 
-	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/session"
 	"github.com/spf13/cobra"
 )
 

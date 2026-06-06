@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/handyfun97/ottrta/internal/agent"
-	"github.com/handyfun97/ottrta/internal/event"
-	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/agent"
+	"github.com/thilob97/ottrta/internal/event"
+	"github.com/thilob97/ottrta/internal/session"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

@@ -10,9 +10,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/handyfun97/ottrta/internal/event"
-	"github.com/handyfun97/ottrta/internal/session"
-	"github.com/handyfun97/ottrta/internal/task"
+	"github.com/thilob97/ottrta/internal/event"
+	"github.com/thilob97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/task"
 )
 
 func testModel() Model {

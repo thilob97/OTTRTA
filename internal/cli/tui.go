@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/handyfun97/ottrta/internal/tui"
+	"github.com/thilob97/ottrta/internal/tui"
 	"github.com/spf13/cobra"
 )
 

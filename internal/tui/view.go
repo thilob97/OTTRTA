@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/handyfun97/ottrta/internal/session"
+	"github.com/thilob97/ottrta/internal/session"
 )
 
 var impArts = [...][4]string{

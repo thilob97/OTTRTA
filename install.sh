@@ -2,7 +2,7 @@
 set -e
 
 # Repository details
-OWNER="handyfun97"
+OWNER="thilob97"
 REPO="ottrta"
 
 # Detect OS and Arch

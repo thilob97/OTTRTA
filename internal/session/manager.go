@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/handyfun97/ottrta/internal/event"
+	"github.com/thilob97/ottrta/internal/event"
 )
 
 const DefaultMaxLogs = 1000

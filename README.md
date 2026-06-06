@@ -7,7 +7,7 @@ One Terminal To Rule Them All — a small Go TUI for orchestrating, monitoring, 
 You can install `ottrta` using the automated installation script:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/handyfun97/ottrta/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/thilob97/ottrta/main/install.sh | sh
 ```
 
 The script automatically detects your OS and architecture, downloads the latest release binary, and installs it to `/usr/local/bin` (or `~/.local/bin` if root permissions are not available).

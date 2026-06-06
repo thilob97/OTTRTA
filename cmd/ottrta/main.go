@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/handyfun97/ottrta/internal/cli"
+	"github.com/thilob97/ottrta/internal/cli"
 )
 
 func main() {

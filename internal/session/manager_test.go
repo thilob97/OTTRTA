@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/handyfun97/ottrta/internal/event"
+	"github.com/thilob97/ottrta/internal/event"
 )
 
 func TestAppendLogTargetsSessionAndBoundsLogs(t *testing.T) {
