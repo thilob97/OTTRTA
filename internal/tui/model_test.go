@@ -599,3 +599,44 @@ func TestSessionListScrolling(t *testing.T) {
 		t.Fatalf("rendered sessions included off-screen session-0 after scrolling: %s", rendered)
 	}
 }
+func TestVisualAgentStatusAndAttention(t *testing.T) {
+	m := testModel()
+	m.width = 100
+	m.height = 24
+
+	// Test 1: NeedsAttention == true should render "⚠️ ATTENTION"
+	m.manager = session.NewManager([]session.Session{
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusRunning, NeedsAttention: true, Logs: []string{"left-only"}},
+	})
+	m.selectedSession = 0
+
+	view := m.View()
+	if !strings.Contains(view, "⚠️ ATTENTION") {
+		t.Fatalf("expected view to contain attention badge '⚠️ ATTENTION', but got:\n%s", view)
+	}
+
+	// Test 2: Status rendering should include status symbols
+	m.manager = session.NewManager([]session.Session{
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusRunning, NeedsAttention: false},
+	})
+	view = m.View()
+	if !strings.Contains(view, "🟢 running") {
+		t.Fatalf("expected view to contain '🟢 running', but got:\n%s", view)
+	}
+
+	m.manager = session.NewManager([]session.Session{
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusStopped, NeedsAttention: false},
+	})
+	view = m.View()
+	if !strings.Contains(view, "⚪ stopped") {
+		t.Fatalf("expected view to contain '⚪ stopped', but got:\n%s", view)
+	}
+
+	m.manager = session.NewManager([]session.Session{
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusFailed, NeedsAttention: false},
+	})
+	view = m.View()
+	if !strings.Contains(view, "🔴 failed") {
+		t.Fatalf("expected view to contain '🔴 failed', but got:\n%s", view)
+	}
+}

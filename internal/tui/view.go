@@ -303,7 +303,7 @@ func (m Model) renderSessionList(width int, maxHeight int) string {
 func (m Model) renderSessionCard(s *session.Session, width int, selected bool) string {
 	status := renderStatus(s.Status)
 	if s.NeedsAttention {
-		status += " !"
+		status += " " + attentionBadgeStyle.Render("⚠️ ATTENTION")
 	}
 
 	avatarStr := impArt(s.ID, s.Status, m.animationFrame)
@@ -325,9 +325,19 @@ func (m Model) renderSessionCard(s *session.Session, width int, selected bool) s
 
 	cardContent := lipgloss.JoinHorizontal(lipgloss.Top, avatarStr, " ", rightCol)
 
-	style := sessionCardStyle
-	if selected {
-		style = selectedSessionCardStyle
+	var style lipgloss.Style
+	if s.NeedsAttention {
+		if selected {
+			style = selectedAttentionSessionCardStyle
+		} else {
+			style = attentionSessionCardStyle
+		}
+	} else {
+		if selected {
+			style = selectedSessionCardStyle
+		} else {
+			style = sessionCardStyle
+		}
 	}
 	return style.Width(width).Render(cardContent)
 }
@@ -409,7 +419,7 @@ func (m Model) renderLogPanel(width int, height int) string {
 	headerLeft := titleStyle.Render(fmt.Sprintf(" %s ", s.Name))
 	headerRight := renderStatus(s.Status)
 	if s.NeedsAttention {
-		headerRight += " !"
+		headerRight += " " + attentionBadgeStyle.Render("⚠️ ATTENTION")
 	}
 	headerPad := contentWidth - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
 	if headerPad < 0 {
@@ -646,11 +656,11 @@ func (m Model) renderFooter() string {
 func renderStatus(status session.Status) string {
 	switch status {
 	case session.StatusRunning:
-		return runningStyle.Render("running")
+		return runningStyle.Render("🟢 running")
 	case session.StatusStopped:
-		return stoppedStyle.Render("stopped")
+		return stoppedStyle.Render("⚪ stopped")
 	case session.StatusFailed:
-		return failedStyle.Render("failed")
+		return failedStyle.Render("🔴 failed")
 	default:
 		return string(status)
 	}
