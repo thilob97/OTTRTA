@@ -77,8 +77,11 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.selectedTask < len(tasks)-1 {
 				m.selectedTask++
 			}
-		default:
-			m.selectedSession = m.manager.ClampIndex(m.selectedSession + 1)
+		case focusSessions:
+			sessions := m.manager.Sessions()
+			if m.selectedSession+2 < len(sessions) {
+				m.selectedSession += 2
+			}
 		}
 	case "k", "up":
 		switch m.focus {
@@ -86,20 +89,47 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.selectedTask > 0 {
 				m.selectedTask--
 			}
-		default:
-			m.selectedSession = m.manager.ClampIndex(m.selectedSession - 1)
+		case focusSessions:
+			if m.selectedSession >= 2 {
+				m.selectedSession -= 2
+			}
 		}
 	case "h", "left":
+		switch m.focus {
+		case focusSessions:
+			if m.selectedSession%2 == 1 {
+				m.selectedSession--
+			}
+		case focusLogs:
+			m.focus = focusSessions
+		}
+	case "l", "right":
+		switch m.focus {
+		case focusSessions:
+			sessions := m.manager.Sessions()
+			if m.selectedSession%2 == 0 && m.selectedSession+1 < len(sessions) {
+				m.selectedSession++
+			}
+		}
+	case "tab":
 		if m.focus == focusSessions {
 			m.focus = focusTasks
 		} else if m.focus == focusTasks {
 			m.focus = focusSessions
-		}
-	case "l", "right":
-		if m.focus == focusTasks {
+		} else if m.focus == focusLogs {
 			m.focus = focusSessions
-		} else if m.focus == focusSessions {
+		}
+	case "shift+tab":
+		if m.focus == focusSessions {
 			m.focus = focusTasks
+		} else if m.focus == focusTasks {
+			m.focus = focusSessions
+		} else if m.focus == focusLogs {
+			m.focus = focusSessions
+		}
+	case "esc":
+		if m.focus == focusLogs {
+			m.focus = focusSessions
 		}
 	case "enter":
 		if m.focus == focusSessions {
