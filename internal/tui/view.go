@@ -537,7 +537,10 @@ func (m Model) renderInputModal() string {
 		}
 		return renderModal("Rename session", "Current: "+name, "Name", m.renameInput, "", "enter save  esc cancel")
 	case UIModeNewAgent:
-		return renderModal("New OMP agent", "Create a stopped agent session.", "Working directory", m.newAgentWorkDirInput, m.newAgentCompletionHint, "tab complete  enter create  esc cancel")
+		if m.newAgentStep == 0 {
+			return renderModal("New agent (1/2)", "Enter command for the agent session.", "Command", m.newAgentCommandInput, "", "enter next  esc cancel")
+		}
+		return renderModal("New agent (2/2)", "Enter working directory for the agent.", "Working directory", m.newAgentWorkDirInput, m.newAgentCompletionHint, "tab complete  enter create  esc back")
 	default:
 		return ""
 	}
@@ -547,7 +550,13 @@ func renderModal(title, subtitle, label, value, hint, help string) string {
 	const width = 52
 	input := value
 	if input == "" {
-		input = mutedStyle.Render("(default current directory)")
+		if label == "Command" {
+			input = mutedStyle.Render("(e.g. omp, claude)")
+		} else if label == "Name" {
+			input = mutedStyle.Render("(enter a name)")
+		} else {
+			input = mutedStyle.Render("(default current directory)")
+		}
 	}
 	lines := []string{
 		titleStyle.Render(title),

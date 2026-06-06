@@ -40,8 +40,10 @@ type Model struct {
 	attachedSessionID      string
 	renameSessionID        string
 	renameInput            string
+	newAgentCommandInput   string
 	newAgentWorkDirInput   string
 	newAgentCompletionHint string
+	newAgentStep           int
 	animationFrame         int
 	storePath              string
 	processEvents          map[string]<-chan event.ProcessMsg

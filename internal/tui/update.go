@@ -172,22 +172,58 @@ func (m Model) updateRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+
 func (m Model) updateNewAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.newAgentStep == 0 {
+		switch msg.Type {
+		case tea.KeyCtrlC:
+			m.manager.StopAllProcesses()
+			return m, tea.Quit
+		case tea.KeyEsc:
+			m.mode = UIModeMonitor
+			m.newAgentCommandInput = ""
+			m.newAgentWorkDirInput = ""
+			m.newAgentCompletionHint = ""
+			return m, nil
+		case tea.KeyEnter:
+			cmd := strings.TrimSpace(m.newAgentCommandInput)
+			if cmd != "" {
+				m.newAgentStep = 1
+			}
+			return m, nil
+		case tea.KeyBackspace, tea.KeyCtrlH:
+			runes := []rune(m.newAgentCommandInput)
+			if len(runes) > 0 {
+				m.newAgentCommandInput = string(runes[:len(runes)-1])
+			}
+			return m, nil
+		case tea.KeySpace:
+			m.newAgentCommandInput += " "
+			return m, nil
+		case tea.KeyRunes:
+			m.newAgentCommandInput += string(msg.Runes)
+			return m, nil
+		default:
+			return m, nil
+		}
+	}
+
+	// Step 1: WorkDir
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		m.manager.StopAllProcesses()
 		return m, tea.Quit
 	case tea.KeyEsc:
-		m.mode = UIModeMonitor
-		m.newAgentWorkDirInput = ""
-		m.newAgentCompletionHint = ""
+		m.newAgentStep = 0
 		return m, nil
 	case tea.KeyEnter:
+		cmd := strings.TrimSpace(m.newAgentCommandInput)
 		workdir := strings.TrimSpace(m.newAgentWorkDirInput)
 		m.mode = UIModeMonitor
+		m.newAgentCommandInput = ""
 		m.newAgentWorkDirInput = ""
 		m.newAgentCompletionHint = ""
-		return m.addNewAgent(workdir)
+		return m.addNewAgent(cmd, workdir)
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		runes := []rune(m.newAgentWorkDirInput)
 		if len(runes) > 0 {
@@ -213,8 +249,10 @@ func (m Model) updateNewAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) beginNewAgent() (tea.Model, tea.Cmd) {
 	m.mode = UIModeNewAgent
+	m.newAgentCommandInput = ""
 	m.newAgentWorkDirInput = ""
 	m.newAgentCompletionHint = ""
+	m.newAgentStep = 0
 	return m, nil
 }
 
@@ -251,32 +289,49 @@ func (m Model) attachSelected() (tea.Model, tea.Cmd) {
 	m.focus = focusLogs
 	return m, nil
 }
-func (m Model) addNewAgent(workdir string) (tea.Model, tea.Cmd) {
-	// Find max omp-N id to generate a stable unique session id
+func (m Model) addNewAgent(command string, workdir string) (tea.Model, tea.Cmd) {
+	cmdPrefix := command
+	if cmdPrefix == "" {
+		cmdPrefix = "agent"
+	}
+	var sb strings.Builder
+	for _, r := range cmdPrefix {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		}
+	}
+	prefix := sb.String()
+	if prefix == "" {
+		prefix = "agent"
+	}
+
 	maxID := 0
 	for _, s := range m.manager.Sessions() {
-		if s.Kind == session.SessionKindAgent && s.AgentKind == session.AgentKindOmp {
+		if s.Kind == session.SessionKindAgent {
 			var id int
-			fmt.Sscanf(s.ID, "omp-%d", &id)
-			if id > maxID {
-				maxID = id
+			if _, err := fmt.Sscanf(s.ID, prefix+"-%d", &id); err == nil {
+				if id > maxID {
+					maxID = id
+				}
 			}
 		}
 	}
 	nextID := maxID + 1
-	name := fmt.Sprintf("omp-%d", nextID)
+	name := fmt.Sprintf("%s-%d", prefix, nextID)
 	displayName := session.RandomImpName()
 	log := fmt.Sprintf("%s ready", displayName)
 	if workdir != "" {
 		log = fmt.Sprintf("%s ready (cwd: %s)", displayName, workdir)
 	}
+
+	agentKind := session.AgentKind(prefix)
 	m.manager.AddSession(session.Session{
 		ID:        name,
 		Name:      displayName,
 		Kind:      session.SessionKindAgent,
-		AgentKind: session.AgentKindOmp,
+		AgentKind: agentKind,
 		Status:    session.StatusStopped,
-		Command:   "omp",
+		Command:   command,
 		WorkDir:   workdir,
 		Logs:      []string{log},
 	})

@@ -172,13 +172,13 @@ func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
 	m := testModel()
 
 	m = updateForTest(t, m, keyRune('n'))
-	if m.mode != UIModeNewAgent || m.newAgentWorkDirInput != "" {
-		t.Fatalf("new agent start = mode %s input %q", m.mode, m.newAgentWorkDirInput)
+	if m.mode != UIModeNewAgent || m.newAgentCommandInput != "" {
+		t.Fatalf("new agent start = mode %s input %q", m.mode, m.newAgentCommandInput)
 	}
 	if footer := m.renderFooter(); !strings.Contains(footer, "NEW AGENT | tab complete") {
 		t.Fatalf("new agent footer = %q", footer)
 	}
-	if view := m.View(); !strings.Contains(view, "New OMP agent") || !strings.Contains(view, "Working directory") {
+	if view := m.View(); !strings.Contains(view, "New agent (1/2)") || !strings.Contains(view, "Command") {
 		t.Fatalf("new agent modal missing from view:\n%s", view)
 	}
 	m = updateForTest(t, m, keyRune('x'))
@@ -188,6 +188,17 @@ func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
 	}
 
 	m = updateForTest(t, m, keyRune('n'))
+	// Enter command "omp"
+	for _, r := range "omp" {
+		m = updateForTest(t, m, keyRune(r))
+	}
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter}) // Advance to step 1
+
+	if m.mode != UIModeNewAgent || m.newAgentStep != 1 {
+		t.Fatalf("did not advance to step 1: mode %s step %d", m.mode, m.newAgentStep)
+	}
+
+	// Enter workdir "C:/work dir"
 	for _, r := range "C:/work" {
 		m = updateForTest(t, m, keyRune(r))
 	}
@@ -195,7 +206,7 @@ func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
 	for _, r := range "dir" {
 		m = updateForTest(t, m, keyRune(r))
 	}
-	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter}) // Commit
 
 	if m.mode != UIModeMonitor || m.manager.Count() != 4 || m.selectedSession != 3 {
 		t.Fatalf("new agent commit = mode %s count %d selected %d", m.mode, m.manager.Count(), m.selectedSession)
@@ -237,6 +248,7 @@ func TestNewAgentWorkDirTabCompletion(t *testing.T) {
 
 	m := testModel()
 	m = updateForTest(t, m, keyRune('n'))
+	m.newAgentStep = 1
 	m.newAgentWorkDirInput = filepath.Join(root, "alph")
 	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
 	wantCompleted := alpha + string(os.PathSeparator)
