@@ -14,7 +14,7 @@ func TestVersionCommand(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if got, want := out.String(), "ottrta v0.3.0\n"; got != want {
+	if got, want := out.String(), "ottrta "+Version+"\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
