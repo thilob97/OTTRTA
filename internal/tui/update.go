@@ -132,13 +132,10 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusSessions
 		}
 	case "enter":
-		if m.focus == focusSessions {
-			m.focus = focusLogs
-		} else if m.focus == focusLogs {
-			return m.attachSelected()
-		} else if m.focus == focusTasks {
+		if m.focus == focusTasks {
 			return m.toggleSelectedTask()
 		}
+		return m.attachSelected()
 	case " ", "space":
 		if m.focus == focusTasks {
 			return m.toggleSelectedTask()
