@@ -71,28 +71,13 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.manager.StopAllProcesses()
 		return m, tea.Quit
 	case "j", "down":
-		switch m.focus {
-		case focusTasks:
-			tasks := m.taskManager.ListTasks()
-			if m.selectedTask < len(tasks)-1 {
-				m.selectedTask++
-			}
-		case focusSessions:
-			sessions := m.manager.Sessions()
-			if m.selectedSession+2 < len(sessions) {
-				m.selectedSession += 2
-			}
+		sessions := m.manager.Sessions()
+		if m.selectedSession+2 < len(sessions) {
+			m.selectedSession += 2
 		}
 	case "k", "up":
-		switch m.focus {
-		case focusTasks:
-			if m.selectedTask > 0 {
-				m.selectedTask--
-			}
-		case focusSessions:
-			if m.selectedSession >= 2 {
-				m.selectedSession -= 2
-			}
+		if m.selectedSession >= 2 {
+			m.selectedSession -= 2
 		}
 	case "h", "left":
 		switch m.focus {
@@ -111,35 +96,13 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selectedSession++
 			}
 		}
-	case "tab":
-		if m.focus == focusSessions {
-			m.focus = focusTasks
-		} else if m.focus == focusTasks {
-			m.focus = focusSessions
-		} else if m.focus == focusLogs {
-			m.focus = focusSessions
-		}
-	case "shift+tab":
-		if m.focus == focusSessions {
-			m.focus = focusTasks
-		} else if m.focus == focusTasks {
-			m.focus = focusSessions
-		} else if m.focus == focusLogs {
-			m.focus = focusSessions
-		}
 	case "esc":
 		if m.focus == focusLogs {
 			m.focus = focusSessions
 		}
 	case "enter":
-		if m.focus == focusTasks {
-			return m.toggleSelectedTask()
-		}
 		return m.attachSelected()
 	case " ", "space":
-		if m.focus == focusTasks {
-			return m.toggleSelectedTask()
-		}
 		return m.toggleSelected()
 	case "n":
 		return m.beginNewAgent()
@@ -147,50 +110,6 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.beginRenameSelected()
 	case "x":
 		return m.removeSelected()
-	}
-	return m, nil
-}
-func (m Model) toggleSelectedTask() (tea.Model, tea.Cmd) {
-	tasks := m.taskManager.ListTasks()
-	if m.selectedTask < 0 || m.selectedTask >= len(tasks) {
-		return m, nil
-	}
-	task := tasks[m.selectedTask]
-
-	allRunning := true
-	hasSessions := false
-	for _, sid := range task.SessionIDs {
-		if s, ok := m.manager.SessionByID(sid); ok {
-			hasSessions = true
-			if s.Status != session.StatusRunning {
-				allRunning = false
-				break
-			}
-		}
-	}
-
-	if allRunning && hasSessions {
-		m.manager.StopTaskSessions(task.ID)
-		m.taskManager.UpdateTaskStatus(task.ID)
-	} else {
-		cols := m.ptyCols()
-		rows := m.ptyRows()
-		if err := m.manager.StartTaskSessions(processContext(), task.ID, cols, rows); err != nil {
-			m.taskManager.UpdateTaskStatus(task.ID)
-			return m, nil
-		}
-		for _, sid := range task.SessionIDs {
-			if ptyEvents, ok := m.ptyEvents[sid]; ok && ptyEvents != nil {
-				_ = ptyEvents
-			}
-			if s, ok := m.manager.SessionByID(sid); ok && s.Status == session.StatusRunning {
-				events := make(chan event.PTYMsg, 128)
-				go func() {
-					_ = events
-				}()
-			}
-		}
-		m.taskManager.UpdateTaskStatus(task.ID)
 	}
 	return m, nil
 }

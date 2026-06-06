@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/handyfun97/ottrta/internal/session"
-	"github.com/handyfun97/ottrta/internal/task"
 )
 
 var impArts = [...][4]string{
@@ -140,22 +139,16 @@ func (m Model) View() string {
 		}
 	}
 
-	taskInfo := m.renderTaskInfo()
 	banner := renderBanner()
 	bannerLines := strings.Count(banner, "\n")
 
 	availableSessionHeight := panelHeight - 2 - bannerLines
-	leftContent := banner
-	if taskInfo != "" {
-		taskInfoLines := strings.Count(taskInfo, "\n") + 1
-		availableSessionHeight -= (taskInfoLines + 1)
-		leftContent += taskInfo + "\n"
-	}
 	if availableSessionHeight < 5 {
 		availableSessionHeight = 5
 	}
 
-	leftContent += m.renderSessionList(leftWidth, availableSessionHeight)
+	leftContent := banner + m.renderSessionList(leftWidth, availableSessionHeight)
+
 	left := panelStyle(m.focus == focusSessions).
 		Width(leftWidth).
 		Height(panelHeight).
@@ -394,51 +387,11 @@ func stableImpIndex(sessionID string) int {
 }
 
 func renderBanner() string {
-	banner := "  ___  _____ _____ ____  _____  _\n" +
-		" / _ \\   | |   | | |  _ \\  | | / \\\n" +
-		" \\___/   |_|   |_| |_| \\_\\ |_|/_/ \\"
+	banner := " ___ _____ _____ ____ _____  _\n" +
+		"| . |_   _|_   _|  _ \\_   _|/ \\\n" +
+		"| | | | |   | | |    / | | / _ \\\n" +
+		"|___| |_|   |_| |_|_\\  |_|/_/ \\_\\"
 	return titleStyle.Render(banner) + "\n"
-}
-
-func (m Model) renderTaskInfo() string {
-	tasks := m.taskManager.ListTasks()
-	if len(tasks) == 0 {
-		return ""
-	}
-
-	var lines []string
-	for i, t := range tasks {
-		marker := " "
-		if m.focus == focusTasks && i == m.selectedTask {
-			marker = ">"
-		}
-		attention := ""
-		for _, sid := range t.SessionIDs {
-			if s, ok := m.manager.SessionByID(sid); ok && s.NeedsAttention {
-				attention = " !"
-				break
-			}
-		}
-		status := renderTaskStatus(t.Status)
-		lines = append(lines, fmt.Sprintf("%s %s %s%s", marker, t.ID, status, attention))
-	}
-
-	return titleStyle.Render("Tasks") + "\n" + strings.Join(lines, "\n") + "\n"
-}
-
-func renderTaskStatus(status task.TaskStatus) string {
-	switch status {
-	case task.TaskRunning:
-		return runningStyle.Render("running")
-	case task.TaskStopped:
-		return stoppedStyle.Render("stopped")
-	case task.TaskFailed:
-		return failedStyle.Render("failed")
-	case task.TaskDone:
-		return "done"
-	default:
-		return string(status)
-	}
 }
 
 func (m Model) renderLogPanel(width int, height int) string {

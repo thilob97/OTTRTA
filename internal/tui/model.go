@@ -12,8 +12,7 @@ import (
 type focusPanel int
 
 const (
-	focusTasks focusPanel = iota
-	focusSessions
+	focusSessions focusPanel = iota
 	focusLogs
 )
 
@@ -34,7 +33,6 @@ type Model struct {
 	manager                session.Manager
 	taskManager            *task.Manager
 	selectedSession        int
-	selectedTask           int
 	focus                  focusPanel
 	width                  int
 	height                 int
@@ -95,7 +93,6 @@ func newBaseModel(sessionMgr session.Manager, taskMgr *task.Manager, storePath s
 	return Model{
 		manager:       sessionMgr,
 		taskManager:   taskMgr,
-		selectedTask:  0,
 		focus:         focusSessions,
 		mode:          UIModeMonitor,
 		storePath:     storePath,

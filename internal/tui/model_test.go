@@ -120,18 +120,6 @@ func TestFocusKeys(t *testing.T) {
 		t.Fatalf("initial focus = %d, want sessions", m.focus)
 	}
 
-	// tab wechselt zu focusTasks
-	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.focus != focusTasks {
-		t.Fatalf("focus after tab = %d, want tasks", m.focus)
-	}
-
-	// tab wechselt zurück zu focusSessions
-	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.focus != focusSessions {
-		t.Fatalf("focus after tab = %d, want sessions", m.focus)
-	}
-
 	// Enter wechselt zu focusLogs
 	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.focus != focusLogs {
