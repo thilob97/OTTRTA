@@ -50,6 +50,7 @@ go run ./cmd/ottrta version
 - The session panel stays only wide enough for two cards; extra space goes to the log panel.
 - Running sessions animate their imp banner; stopped sessions show `zZzZ`.
 - Newly created agent sessions get short AI-slop-themed imp display names; stable session IDs are still persisted and used internally.
+- Dynamic card borders (amber) and `⚠️ ATTENTION` warning badges highlight any sessions that need attention. Emojis (`🟢`, `⚪`, `🔴`) display clear, active vs. inactive states in the status line.
 - The TUI runs in Bubble Tea's alternate screen, so it does not grow terminal scrollback while running.
 
 ## Persistence
