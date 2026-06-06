@@ -14,6 +14,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.updateKey(msg)
+	case animationTickMsg:
+		m.animationFrame++
+		return m, tickAnimation()
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -297,7 +300,7 @@ func (m Model) attachSelected() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) addNewAgent(workdir string) (tea.Model, tea.Cmd) {
-	// Find max omp-N id to generate a new unique name
+	// Find max omp-N id to generate a stable unique session id
 	maxID := 0
 	for _, s := range m.manager.Sessions() {
 		if s.Kind == session.SessionKindAgent && s.AgentKind == session.AgentKindOmp {
@@ -310,14 +313,14 @@ func (m Model) addNewAgent(workdir string) (tea.Model, tea.Cmd) {
 	}
 	nextID := maxID + 1
 	name := fmt.Sprintf("omp-%d", nextID)
-
-	log := fmt.Sprintf("%s ready", name)
+	displayName := session.RandomImpName()
+	log := fmt.Sprintf("%s ready", displayName)
 	if workdir != "" {
-		log = fmt.Sprintf("%s ready (cwd: %s)", name, workdir)
+		log = fmt.Sprintf("%s ready (cwd: %s)", displayName, workdir)
 	}
 	m.manager.AddSession(session.Session{
 		ID:        name,
-		Name:      name,
+		Name:      displayName,
 		Kind:      session.SessionKindAgent,
 		AgentKind: session.AgentKindOmp,
 		Status:    session.StatusStopped,

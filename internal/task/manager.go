@@ -38,7 +38,7 @@ func (m *Manager) CreateTask(title string, mode TaskMode, agentReq AgentRequest,
 		sessionID := fmt.Sprintf("%s-%s-%d", taskID, agentReq.Kind, i)
 		s := session.Session{
 			ID:        sessionID,
-			Name:      sessionID,
+			Name:      session.RandomImpName(),
 			Kind:      session.SessionKindAgent,
 			Status:    session.StatusStopped,
 			Command:   string(agentReq.Kind),

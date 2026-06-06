@@ -9,6 +9,103 @@ import (
 	"github.com/handyfun97/ottrta/internal/task"
 )
 
+var impArts = [...][4]string{
+	{
+		`  (\_/)  `,
+		` / ^_^ \ `,
+		`(  "*"  )`,
+		" `--`--` ",
+	},
+	{
+		` /\_/\  `,
+		`( o.o ) `,
+		` / ^ \  `,
+		`  v v   `,
+	},
+	{
+		`  /\/\  `,
+		` ( •• ) `,
+		` /(><)\ `,
+		`  "  "  `,
+	},
+	{
+		`  .-.-. `,
+		` ( 0_0 )`,
+		`<(  :  )`,
+		`  ^^ ^^ `,
+	},
+	{
+		`  /\=/\ `,
+		` ( -_- )`,
+		` /|:::|\`,
+		`  /   \ `,
+	},
+	{
+		`  (\ /) `,
+		`  (x_x) `,
+		` <( " )>`,
+		`  /_|_\ `,
+	},
+	{
+		`  /^ ^\ `,
+		` ( @ @ )`,
+		` /  *  \`,
+		`  m---m `,
+	},
+	{
+		`  (\w/) `,
+		` ( >.< )`,
+		` /(   )\`,
+		`  d   b `,
+	},
+	{
+		`  _/\_  `,
+		` ( $.$ )`,
+		` /|slp|\`,
+		`  /___\ `,
+	},
+	{
+		`  (\/)  `,
+		` (o_o)  `,
+		` <(~~~)>`,
+		`  /   \ `,
+	},
+	{
+		`  /\_/\ `,
+		` ( @_@ )`,
+		` /{:::}\`,
+		`   u u  `,
+	},
+	{
+		`  (^^^) `,
+		` ( -o- )`,
+		` /|+++|\`,
+		"  /`-'\\ ",
+	},
+}
+
+var impColors = [...]lipgloss.Color{
+	lipgloss.Color("39"),
+	lipgloss.Color("42"),
+	lipgloss.Color("45"),
+	lipgloss.Color("81"),
+	lipgloss.Color("99"),
+	lipgloss.Color("135"),
+	lipgloss.Color("171"),
+	lipgloss.Color("202"),
+	lipgloss.Color("208"),
+	lipgloss.Color("213"),
+	lipgloss.Color("220"),
+	lipgloss.Color("228"),
+}
+
+const (
+	sessionCardMaxWidth      = 20
+	sessionPanelTargetWidth  = 2*sessionCardMaxWidth + 7
+	sessionPanelMinimumWidth = 42
+	logPanelMinimumWidth     = 30
+)
+
 func (m Model) View() string {
 	width := m.width
 	if width < 60 {
@@ -19,7 +116,9 @@ func (m Model) View() string {
 		height = 24
 	}
 
-	panelHeight := height - 3
+	// Reserve space for footer and margins
+	footerHeight := 1
+	panelHeight := height - footerHeight - 2
 	if panelHeight < 8 {
 		panelHeight = 8
 	}
@@ -28,20 +127,31 @@ func (m Model) View() string {
 		return m.renderAttachView(width, height, panelHeight)
 	}
 
-	leftWidth := width / 3
-	if leftWidth < 24 {
-		leftWidth = 24
+	leftWidth := sessionPanelTargetWidth
+	if leftWidth < sessionPanelMinimumWidth {
+		leftWidth = sessionPanelMinimumWidth
 	}
 	rightWidth := width - leftWidth - 4
-	if rightWidth < 30 {
-		rightWidth = 30
+	if rightWidth < logPanelMinimumWidth {
+		rightWidth = logPanelMinimumWidth
+		leftWidth = width - rightWidth - 4
+		if leftWidth < sessionPanelMinimumWidth {
+			leftWidth = sessionPanelMinimumWidth
+		}
 	}
 
 	taskInfo := m.renderTaskInfo()
+	taskInfoLines := strings.Count(taskInfo, "\n") + 1
+	// Calculate available height for session list (panel height minus task info, title, and margins)
+	availableSessionHeight := panelHeight - taskInfoLines - 2 // -2 for "Sessions" title and newline
+	if availableSessionHeight < 5 {
+		availableSessionHeight = 5
+	}
+	
 	left := panelStyle(m.focus == focusSessions).
 		Width(leftWidth).
 		Height(panelHeight).
-		Render(taskInfo + "\n" + m.renderSessionList(leftWidth))
+		Render(taskInfo + "\n" + m.renderSessionList(leftWidth, availableSessionHeight))
 	right := termPanelStyle(m.focus == focusLogs).
 		Width(rightWidth).
 		Height(panelHeight).
@@ -105,30 +215,121 @@ func (m Model) renderAttachView(width, height, panelHeight int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, term)
 }
 
-func (m Model) renderSessionList(width int) string {
+func (m Model) renderSessionList(width int, maxHeight int) string {
 	sessions := m.manager.Sessions()
 	lines := []string{titleStyle.Render("Sessions")}
 	if len(sessions) == 0 {
 		return strings.Join(append(lines, mutedStyle.Render("No sessions")), "\n")
 	}
 
-	for i := range sessions {
-		marker := " "
-		if i == m.selectedSession {
-			marker = ">"
+	cardWidth := (width - 7) / 2
+	if cardWidth > sessionCardMaxWidth {
+		cardWidth = sessionCardMaxWidth
+	}
+	if cardWidth < 16 {
+		cardWidth = 16
+	}
+	
+	usedHeight := 1 // "Sessions" title
+	for i := 0; i < len(sessions); i += 2 {
+		left := m.renderSessionCard(&sessions[i], cardWidth, i == m.selectedSession)
+		leftHeight := strings.Count(left, "\n") + 1
+		
+		var row string
+		var rowHeight int
+		if i+1 >= len(sessions) {
+			row = left
+			rowHeight = leftHeight
+		} else {
+			right := m.renderSessionCard(&sessions[i+1], cardWidth, i+1 == m.selectedSession)
+			row = lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+			rightHeight := strings.Count(right, "\n") + 1
+			if leftHeight > rightHeight {
+				rowHeight = leftHeight
+			} else {
+				rowHeight = rightHeight
+			}
 		}
-		status := renderStatus(sessions[i].Status)
-		if sessions[i].NeedsAttention {
-			status += "  !"
-		}
-		row := fmt.Sprintf("%s %-18s %s", marker, sessions[i].Name, status)
-		if i == m.selectedSession {
-			row = selectedSessionStyle.Width(width - 2).Render(row)
+		
+		if maxHeight > 0 && usedHeight+rowHeight > maxHeight {
+			break
 		}
 		lines = append(lines, row)
+		usedHeight += rowHeight
 	}
 	return strings.Join(lines, "\n")
 }
+
+func (m Model) renderSessionCard(s *session.Session, width int, selected bool) string {
+	status := renderStatus(s.Status)
+	if s.NeedsAttention {
+		status += " !"
+	}
+
+	rows := []string{impArt(s.ID, s.Status, m.animationFrame)}
+	rows = append(rows, cardNameLines(s.Name, width-4)...)
+	rows = append(rows, mutedStyle.Render(s.ID), status)
+	style := sessionCardStyle
+	if selected {
+		style = selectedSessionCardStyle
+	}
+	return style.Width(width).Render(strings.Join(rows, "\n"))
+}
+
+var runningImpBanners = [...]string{
+	"* slop *",
+	"✦ slop ✦",
+	"> slop <",
+	"~ slop ~",
+}
+
+func impArt(sessionID string, status session.Status, frame int) string {
+	index := stableImpIndex(sessionID)
+	avatar := impArts[index]
+	color := impColors[index%len(impColors)]
+	banner := "       "
+	if status == session.StatusStopped {
+		banner = " zZzZ  "
+	} else if status == session.StatusRunning {
+		banner = runningImpBanners[frame%len(runningImpBanners)]
+	} else if status == session.StatusFailed {
+		banner = "  !!!  "
+	}
+	art := banner + "\n" + strings.Join(avatar[:], "\n")
+	return fmt.Sprintf("\x1b[38;5;%sm%s\x1b[0m", string(color), art)
+}
+
+func cardNameLines(name string, width int) []string {
+	if width < 8 {
+		width = 8
+	}
+	if lipgloss.Width(name) <= width {
+		return []string{titleStyle.Render(name)}
+	}
+	words := strings.Fields(name)
+	if len(words) < 2 {
+		return []string{titleStyle.Render(truncateANSI(name, width))}
+	}
+	first := words[0]
+	second := strings.Join(words[1:], " ")
+	return []string{
+		titleStyle.Render(truncateANSI(first, width)),
+		titleStyle.Render(truncateANSI(second, width)),
+	}
+}
+
+func stableImpIndex(sessionID string) int {
+	if len(impArts) == 1 {
+		return 0
+	}
+	var hash uint32 = 2166136261
+	for i := 0; i < len(sessionID); i++ {
+		hash ^= uint32(sessionID[i])
+		hash *= 16777619
+	}
+	return int(hash % uint32(len(impArts)))
+}
+
 func (m Model) renderTaskInfo() string {
 	tasks := m.taskManager.ListTasks()
 	if len(tasks) == 0 {
@@ -176,124 +377,97 @@ func (m Model) renderLogPanel(width int, height int) string {
 		return mutedStyle.Render("No session selected")
 	}
 
-	header := titleStyle.Render(s.Name)
-	statusStr := renderStatus(s.Status)
-	header += " " + statusStr
-	if s.WorkDir != "" {
-		header += " " + mutedStyle.Render("cwd: "+s.WorkDir)
-	}
-
-	if len(s.Logs) == 0 {
-		return header + "\n" + mutedStyle.Render("No output yet")
-	}
-
-	visible := height - 3
+	contentWidth := width - 4
+	visible := height - 2
 	if visible < 1 {
 		visible = 1
 	}
+
+	headerLeft := titleStyle.Render(fmt.Sprintf(" %s ", s.Name))
+	headerRight := renderStatus(s.Status)
+	if s.NeedsAttention {
+		headerRight += " !"
+	}
+	headerPad := contentWidth - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
+	if headerPad < 0 {
+		headerPad = 0
+	}
+	header := headerLeft + strings.Repeat(" ", headerPad) + headerRight
+
 	displayLogs := displayLogLines(s.Logs)
 	if len(displayLogs) > visible {
 		displayLogs = displayLogs[len(displayLogs)-visible:]
 	}
 
-	contentWidth := width - 4 // border(2) + padding(2)
-	if contentWidth < 10 {
-		contentWidth = 10
-	}
 	var lines []string
-	lines = append(lines, header)
 	for _, line := range displayLogs {
-		if strings.HasPrefix(line, "[system]") {
-			lines = append(lines, mutedStyle.Render(line))
-		} else {
-			lines = append(lines, truncateANSI(line, contentWidth))
-		}
+		lines = append(lines, truncateANSI(line, contentWidth))
 	}
-	return strings.Join(lines, "\n")
+	for len(lines) < visible {
+		lines = append(lines, "")
+	}
+
+	content := strings.Join(lines, "\n")
+	return header + "\n" + content
 }
 
 func displayLogLines(logs []string) []string {
-	lines := make([]string, 0, len(logs))
-	for _, log := range logs {
-		cleaned := sanitizeLogText(log)
-		if cleaned == "" {
-			lines = append(lines, "")
-			continue
-		}
-		lines = append(lines, strings.Split(cleaned, "\n")...)
+	if len(logs) == 0 {
+		return []string{mutedStyle.Render("No logs yet")}
 	}
-	return lines
+	sanitized := make([]string, len(logs))
+	for i, log := range logs {
+		sanitized[i] = sanitizeLogText(log)
+	}
+	return sanitized
 }
 
 func sanitizeLogText(text string) string {
-	stripped := strings.ReplaceAll(text, "\r\n", "\n")
-	stripped = strings.ReplaceAll(stripped, "\r", "\n")
-
-	out := strings.Builder{}
-	out.Grow(len(stripped))
-	for i := 0; i < len(stripped); {
-		b := stripped[i]
-		switch {
-		case b == '\n' || b == '\t':
-			out.WriteByte(b)
-			i++
-		case b == '\x1b':
-			// preserve entire ANSI sequence
-			j := i + 1
-			if j < len(stripped) && stripped[j] == '[' {
-				j++
-				for j < len(stripped) && (stripped[j] < 0x40 || stripped[j] > 0x7e) {
-					j++
-				}
-				if j < len(stripped) {
-					j++ // include final byte
-				}
-			}
-			out.WriteString(stripped[i:j])
-			i = j
-		case b < 0x20 && b != '\n' && b != '\t':
-			i++ // skip other control chars
-		default:
-			out.WriteByte(b)
-			i++
+	text = strings.ReplaceAll(text, "\r", "")
+	text = strings.ReplaceAll(text, "\t", "    ")
+	var builder strings.Builder
+	for _, r := range text {
+		if r >= 32 && r != 127 {
+			builder.WriteRune(r)
+		} else if r == '\n' {
+			builder.WriteRune(r)
 		}
 	}
-	return out.String()
+	return builder.String()
 }
 
 // truncateANSI truncates a string containing ANSI escapes to a visible width.
 func truncateANSI(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	visible := 0
 	var out strings.Builder
-	visWidth := 0
-	i := 0
-	for i < len(s) && visWidth < maxWidth {
-		if s[i] == '\x1b' {
-			// copy entire escape sequence
-			j := i + 1
-			if j < len(s) && s[j] == '[' {
-				j++
-				for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
-					j++
-				}
-				if j < len(s) {
-					j++
-				}
+	inEscape := false
+	for _, r := range s {
+		if inEscape {
+			out.WriteRune(r)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEscape = false
 			}
-			out.WriteString(s[i:j])
-			i = j
-		} else {
-			out.WriteByte(s[i])
-			if s[i] >= 0x20 {
-				visWidth++
-			}
-			i++
+			continue
 		}
+		if r == '\x1b' {
+			inEscape = true
+			out.WriteRune(r)
+			continue
+		}
+		if visible >= maxWidth {
+			break
+		}
+		out.WriteRune(r)
+		visible++
 	}
-	// always reset at the end to avoid color bleed
-	if strings.Contains(s, "\x1b[") {
-		out.WriteString("\x1b[0m")
+	result := out.String()
+	if strings.Contains(result, "\x1b[") {
+		result += "\x1b[0m"
 	}
-	return out.String()
+	return result
 }
 
 func (m Model) renderInputModal() string {
@@ -396,6 +570,6 @@ func renderStatus(status session.Status) string {
 	case session.StatusFailed:
 		return failedStyle.Render("failed")
 	default:
-		return mutedStyle.Render(string(status))
+		return string(status)
 	}
 }

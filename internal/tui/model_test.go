@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/handyfun97/ottrta/internal/event"
 	"github.com/handyfun97/ottrta/internal/session"
 	"github.com/handyfun97/ottrta/internal/task"
@@ -200,11 +201,14 @@ func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
 	if s == nil || s.WorkDir != "C:/work dir" || s.Command != "omp" || s.AgentKind != session.AgentKindOmp {
 		t.Fatalf("new agent session mismatch: %+v", s)
 	}
+	if s.Name == s.ID || !strings.Contains(s.Name, " ") {
+		t.Fatalf("new agent display name = %q, want random imp name distinct from id %q", s.Name, s.ID)
+	}
 	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "cwd: C:/work dir") {
 		t.Fatalf("new agent log does not include cwd: %v", s.Logs)
 	}
 	view := m.View()
-	if !strings.Contains(view, "cwd: C:/work dir") {
+	if !strings.Contains(view, "cwd:") || !strings.Contains(view, "C:/work dir") {
 		t.Fatalf("view does not render cwd:\n%s", view)
 	}
 }
@@ -311,6 +315,70 @@ func TestQuitKeyReturnsCommand(t *testing.T) {
 	}
 }
 
+func TestAnimationTickAdvancesFrame(t *testing.T) {
+	m := testModel()
+	updated, cmd := m.Update(animationTickMsg{})
+	if cmd == nil {
+		t.Fatal("animation tick did not schedule next tick")
+	}
+	m = modelFromUpdate(t, updated)
+	if m.animationFrame != 1 {
+		t.Fatalf("animationFrame = %d, want 1", m.animationFrame)
+	}
+}
+
+func TestImpAvatarLayoutAndColor(t *testing.T) {
+	for avatarIndex, avatar := range impArts {
+		width := lipgloss.Width(avatar[0])
+		for lineIndex, line := range avatar[1:] {
+			if got := lipgloss.Width(line); got != width {
+				t.Fatalf("avatar %d line %d width = %d, want %d: %q", avatarIndex, lineIndex+1, got, width, line)
+			}
+		}
+	}
+	if len(impColors) < len(impArts) {
+		t.Fatalf("imp color count = %d, want at least avatar count %d", len(impColors), len(impArts))
+	}
+	if art := impArt("left", session.StatusStopped, 0); !strings.Contains(art, "\x1b[") {
+		t.Fatalf("imp art is not colorized: %q", art)
+	}
+}
+
+func TestImpAvatarsHaveStableVariety(t *testing.T) {
+	if len(impArts) < 10 {
+		t.Fatalf("imp avatar count = %d, want at least 10", len(impArts))
+	}
+	first := impArt("left", session.StatusStopped, 0)
+	if first != impArt("left", session.StatusStopped, 0) {
+		t.Fatal("imp avatar selection is not stable for the same session id")
+	}
+	running0 := impArt("left", session.StatusRunning, 0)
+	running1 := impArt("left", session.StatusRunning, 1)
+	if running0 == running1 || !strings.Contains(running0, "slop") || !strings.Contains(running1, "slop") {
+		t.Fatalf("running imp art is not animated: %q / %q", running0, running1)
+	}
+	if stopped := impArt("left", session.StatusStopped, 0); !strings.Contains(stopped, "zZzZ") {
+		t.Fatalf("stopped imp art does not show sleep marker: %q", stopped)
+	}
+	seen := map[string]bool{}
+	for _, id := range []string{"left", "right", "omp-1", "omp-2", "task-001-omp-1", "task-001-omp-2", "shell-1", "proc-1"} {
+		seen[impArt(id, session.StatusStopped, 0)] = true
+	}
+	if len(seen) < 3 {
+		t.Fatalf("imp avatar selection produced %d variants, want at least 3", len(seen))
+	}
+}
+
+func TestSessionListWidthStaysAtTwoCards(t *testing.T) {
+	m := testModel()
+	rendered := m.renderSessionList(120, 0)
+	for _, line := range strings.Split(rendered, "\n") {
+		if lipgloss.Width(line) > sessionPanelTargetWidth {
+			t.Fatalf("session list line width = %d, want <= %d: %q", lipgloss.Width(line), sessionPanelTargetWidth, line)
+		}
+	}
+}
+
 func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
 	m := testModel()
 	m.width = 100
@@ -321,7 +389,7 @@ func TestViewShowsSessionListAndSelectedLogsOnly(t *testing.T) {
 	})
 
 	view := m.View()
-	for _, want := range []string{"Sessions", "left", "right", "left-only"} {
+	for _, want := range []string{"Sessions", "left", "right", "left-only", "_/\\_", "$.$", "slp", "(o_o)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view does not contain %q:\n%s", want, view)
 		}

@@ -2,11 +2,11 @@ package tui
 
 import (
 	"context"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/handyfun97/ottrta/internal/event"
 	"github.com/handyfun97/ottrta/internal/session"
 	"github.com/handyfun97/ottrta/internal/task"
+	"time"
 )
 
 type focusPanel int
@@ -26,6 +26,10 @@ const (
 	UIModeNewAgent UIMode = "new-agent"
 )
 
+const animationInterval = 450 * time.Millisecond
+
+type animationTickMsg struct{}
+
 type Model struct {
 	manager                session.Manager
 	taskManager            *task.Manager
@@ -40,6 +44,7 @@ type Model struct {
 	renameInput            string
 	newAgentWorkDirInput   string
 	newAgentCompletionHint string
+	animationFrame         int
 	storePath              string
 	processEvents          map[string]<-chan event.ProcessMsg
 	ptyEvents              map[string]<-chan event.PTYMsg
@@ -100,7 +105,7 @@ func newBaseModel(sessionMgr session.Manager, taskMgr *task.Manager, storePath s
 }
 
 func Run() error {
-	finalModel, err := tea.NewProgram(NewModel()).Run()
+	finalModel, err := tea.NewProgram(NewModel(), tea.WithAltScreen()).Run()
 	if err != nil {
 		return err
 	}
@@ -112,7 +117,13 @@ func Run() error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return tickAnimation()
+}
+
+func tickAnimation() tea.Cmd {
+	return tea.Tick(animationInterval, func(time.Time) tea.Msg {
+		return animationTickMsg{}
+	})
 }
 
 func processContext() context.Context {

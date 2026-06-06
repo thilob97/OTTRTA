@@ -25,6 +25,14 @@ go run ./cmd/ottrta version
 - `x`: remove the selected session
 - `q` / `ctrl+c`: quit in monitor mode
 
+## TUI layout
+
+- Sessions render as a two-column grid of taller, colorized imp cards.
+- The session panel stays only wide enough for two cards; extra space goes to the log panel.
+- Running sessions animate their imp banner; stopped sessions show `zZzZ`.
+- Newly created agent sessions get short AI-slop-themed imp display names; stable session IDs are still persisted and used internally.
+- The TUI runs in Bubble Tea's alternate screen, so it does not grow terminal scrollback while running.
+
 ## Persistence
 
 - `ottrta tui` saves session definitions on clean exit and reloads them on the next start.

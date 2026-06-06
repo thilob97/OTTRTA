@@ -55,7 +55,7 @@ func newAgentStartCommand() *cobra.Command {
 				}
 				sessions = append(sessions, session.Session{
 					ID:        name,
-					Name:      name,
+					Name:      session.RandomImpName(),
 					Kind:      session.SessionKindAgent,
 					AgentKind: session.AgentKindOmp,
 					Status:    session.StatusStopped,

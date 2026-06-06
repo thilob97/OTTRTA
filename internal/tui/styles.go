@@ -13,6 +13,15 @@ var (
 	blurredPanelStyle = basePanelStyle.Copy().
 				BorderForeground(lipgloss.Color("240"))
 
+	sessionCardStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("240")).
+				Padding(0, 1)
+
+	selectedSessionCardStyle = sessionCardStyle.Copy().
+					BorderForeground(lipgloss.Color("63")).
+					Background(lipgloss.Color("235"))
+
 	// Terminal panel: dark background for native feel
 	baseTermStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
