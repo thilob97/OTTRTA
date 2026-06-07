@@ -304,20 +304,14 @@ func TestNewModelWithStorePathLoadsPersistedSessionsWithoutDefaults(t *testing.T
 	}
 }
 
-func TestNewModelWithStorePathFallsBackToDefaults(t *testing.T) {
+func TestNewModelWithStorePathStartsEmptyWithoutStoredSessions(t *testing.T) {
 	missingPath := filepath.Join(t.TempDir(), "missing", "sessions.json")
 	m := newModelWithStorePath(missingPath)
-	if m.manager.Count() != 3 {
-		t.Fatalf("missing store session count = %d, want default demo sessions", m.manager.Count())
+	if m.manager.Count() != 0 {
+		t.Fatalf("missing store session count = %d, want no default sessions", m.manager.Count())
 	}
-	if _, ok := m.manager.SessionByID("proc-1"); !ok {
-		t.Fatal("missing store did not create default process session")
-	}
-	if _, ok := m.manager.SessionByID("shell-1"); !ok {
-		t.Fatal("missing store did not create default shell session")
-	}
-	if _, ok := m.manager.SessionByID("omp-1"); !ok {
-		t.Fatal("missing store did not create default agent session")
+	if view := m.View(); !strings.Contains(view, "No sessions") {
+		t.Fatalf("empty model view missing no-sessions state:\n%s", view)
 	}
 
 	corruptPath := filepath.Join(t.TempDir(), "sessions.json")
@@ -325,12 +319,8 @@ func TestNewModelWithStorePathFallsBackToDefaults(t *testing.T) {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 	m = newModelWithStorePath(corruptPath)
-	if m.manager.Count() != 3 {
-		t.Fatalf("corrupt store session count = %d, want default demo sessions", m.manager.Count())
-	}
-	s, ok := m.manager.Session(0)
-	if !ok || !strings.Contains(strings.Join(s.Logs, "\n"), "[system] failed to load sessions:") {
-		t.Fatalf("corrupt store did not surface load error: %+v", s)
+	if m.manager.Count() != 0 {
+		t.Fatalf("corrupt store session count = %d, want no default sessions", m.manager.Count())
 	}
 }
 
