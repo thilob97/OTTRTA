@@ -3,9 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -79,38 +81,13 @@ func newAgentStartCommand() *cobra.Command {
 				allEvents = append(allEvents, events)
 			}
 
-			// Multiplex events
-			eventChan := make(chan session.PTYEvent)
-			for _, evCh := range allEvents {
-				go func(ch <-chan session.PTYEvent) {
-					for e := range ch {
-						eventChan <- e
-					}
-				}(evCh)
-			}
-
 			sigChan := make(chan os.Signal, 1)
 			signal.Notify(sigChan, os.Interrupt)
+			defer signal.Stop(sigChan)
 
-			fmt.Printf("Started %d omp agent(s). Press Ctrl+C to stop.\n", count)
-
-			for {
-				select {
-				case <-sigChan:
-					for _, s := range sessions {
-						manager.StopPTYSession(s.ID)
-					}
-					return nil
-				case ev := <-eventChan:
-					if ev.Data != nil {
-						fmt.Print(string(ev.Data))
-					} else if ev.Err != nil {
-						fmt.Printf("\n[%s exited with error: %v]\n", ev.SessionID, ev.Err)
-					} else {
-						fmt.Printf("\n[%s exited]\n", ev.SessionID)
-					}
-				}
-			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Started %d omp agent(s). Press Ctrl+C to stop.\n", count)
+			return runAgentEventLoop(ctx, cancel, out, sessions, allEvents, sigChan, manager.StopPTYSession)
 		},
 	}
 
@@ -119,4 +96,66 @@ func newAgentStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&nameFlag, "name", "", "base name for the agents")
 
 	return cmd
+}
+
+func runAgentEventLoop(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	out io.Writer,
+	sessions []session.Session,
+	allEvents []<-chan session.PTYEvent,
+	sigChan <-chan os.Signal,
+	stopSession func(string) error,
+) error {
+	eventChan := make(chan session.PTYEvent)
+	var eventsDone sync.WaitGroup
+	eventsDone.Add(len(allEvents))
+	for _, evCh := range allEvents {
+		go func(ch <-chan session.PTYEvent) {
+			defer eventsDone.Done()
+			for e := range ch {
+				select {
+				case eventChan <- e:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(evCh)
+	}
+	go func() {
+		eventsDone.Wait()
+		close(eventChan)
+	}()
+
+	completed := make(map[string]struct{}, len(sessions))
+	for {
+		select {
+		case <-sigChan:
+			cancel()
+			for _, s := range sessions {
+				_ = stopSession(s.ID)
+			}
+			return nil
+		case ev, ok := <-eventChan:
+			if !ok {
+				return nil
+			}
+			if ev.Data != nil {
+				fmt.Fprint(out, string(ev.Data))
+				continue
+			}
+			if _, seen := completed[ev.SessionID]; seen {
+				continue
+			}
+			completed[ev.SessionID] = struct{}{}
+			if ev.Err != nil {
+				fmt.Fprintf(out, "\n[%s exited with error: %v]\n", ev.SessionID, ev.Err)
+			} else {
+				fmt.Fprintf(out, "\n[%s exited]\n", ev.SessionID)
+			}
+			if len(completed) == len(sessions) {
+				return nil
+			}
+		}
+	}
 }

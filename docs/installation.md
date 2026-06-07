@@ -43,7 +43,7 @@ After installation, run:
 ottrta update
 ```
 
-This command delegates to the same platform installer logic used for first-time installs.
+The command prints the installer URL and the platform-specific command to run. It does not download and execute remote scripts automatically; review the installer first, then run the printed command explicitly if you trust it.
 
 ## Build from source
 

@@ -3,8 +3,10 @@ package session
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -12,7 +14,11 @@ import (
 	"github.com/thilob97/ottrta/internal/event"
 )
 
-const processEventBuffer = 128
+const (
+	processEventBuffer       = 128
+	maxProcessLogLineBytes   = 1024 * 1024
+	initialProcessBufferSize = 64 * 1024
+)
 
 // ProcessRuntime owns the OS process handles for one process session.
 type ProcessRuntime struct {
@@ -74,7 +80,7 @@ func (r *ProcessRuntime) CommandLine() string {
 	if len(r.cmd.Args) == 0 {
 		return ""
 	}
-	return strings.Join(r.cmd.Args, " ")
+	return commandLine(r.cmd.Args[0], r.cmd.Args[1:])
 }
 
 func (r *ProcessRuntime) stream(sessionID string, stdout io.Reader, stderr io.Reader) {
@@ -95,10 +101,15 @@ func scanLines(wg *sync.WaitGroup, events chan<- event.ProcessMsg, sessionID str
 	defer wg.Done()
 
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, initialProcessBufferSize), maxProcessLogLineBytes)
 	for scanner.Scan() {
 		events <- event.SessionLogMsg{SessionID: sessionID, Line: scanner.Text()}
 	}
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !isClosedReadError(err) {
 		events <- event.SessionLogMsg{SessionID: sessionID, Line: fmt.Sprintf("[system] log stream error: %v", err)}
 	}
+}
+
+func isClosedReadError(err error) bool {
+	return errors.Is(err, os.ErrClosed) || strings.Contains(err.Error(), "file already closed")
 }

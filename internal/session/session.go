@@ -44,7 +44,6 @@ type Session struct {
 	Logs           []string
 	Cells          [][]Cell
 	CurrentSGR     string
-	logCounter     int
 	outputCol      int
 	outputRow      int
 	savedCol       int

@@ -58,6 +58,8 @@ ottrta version
 ottrta update
 ```
 
+`ottrta update` prints the installer URL and command for your platform. It intentionally does not execute downloaded scripts; review the installer and run the printed command yourself.
+
 ## TUI key bindings
 
 ### Navigation
@@ -85,4 +87,4 @@ The TUI stores session definitions on clean exit and reloads them on the next la
 - working directory
 - agent kind
 
-Terminal output is not persisted.
+Terminal output is not persisted. Stored definitions are validated on load; malformed entries stop the load instead of being ignored silently.

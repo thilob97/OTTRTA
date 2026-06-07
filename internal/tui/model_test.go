@@ -222,6 +222,73 @@ func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
 	// Note: View may truncate long log lines, so we only check that the session logs contain the cwd
 }
 
+func TestInputBoxRendersFullWidthAboveFooter(t *testing.T) {
+	const width = 100
+
+	tests := []struct {
+		name   string
+		setup  func(*Model)
+		title  string
+		footer string
+	}{
+		{
+			name: "rename",
+			setup: func(m *Model) {
+				m.mode = UIModeRename
+				m.renameSessionID = "proc-1"
+				m.renameInput = "proc-renamed"
+			},
+			title:  "Rename session",
+			footer: "RENAME | enter save",
+		},
+		{
+			name: "new agent",
+			setup: func(m *Model) {
+				m.mode = UIModeNewAgent
+				m.newAgentCommandInput = "omp"
+			},
+			title:  "New agent (1/2)",
+			footer: "NEW AGENT | tab complete",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := testModel()
+			m.width = width
+			m.height = 30
+			tt.setup(&m)
+
+			box := m.renderInputBox(width)
+			if box == "" {
+				t.Fatal("input box was empty")
+			}
+			for _, line := range strings.Split(box, "\n") {
+				if got := lipgloss.Width(line); got != width {
+					t.Fatalf("input box line width = %d, want %d: %q", got, width, line)
+				}
+			}
+
+			viewLines := strings.Split(m.View(), "\n")
+			boxLines := strings.Split(box, "\n")
+			if len(viewLines) <= len(boxLines) {
+				t.Fatalf("view too short for bottom input box:\n%s", m.View())
+			}
+			footerLine := viewLines[len(viewLines)-1]
+			if !strings.Contains(footerLine, tt.footer) {
+				t.Fatalf("footer not rendered below input box: %q", footerLine)
+			}
+			renderedBox := strings.Join(viewLines[len(viewLines)-1-len(boxLines):len(viewLines)-1], "\n")
+			if renderedBox != box {
+				t.Fatalf("input box is not immediately above footer\nbox:\n%s\nview:\n%s", box, m.View())
+			}
+			if !strings.Contains(renderedBox, tt.title) {
+				t.Fatalf("input box title %q missing:\n%s", tt.title, renderedBox)
+			}
+		})
+	}
+}
+
 func TestNewAgentWorkDirTabCompletion(t *testing.T) {
 	root := t.TempDir()
 	alpha := filepath.Join(root, "alpha")
@@ -242,6 +309,21 @@ func TestNewAgentWorkDirTabCompletion(t *testing.T) {
 	}
 	if !strings.Contains(hint, "alpha") || !strings.Contains(hint, "alpine") || strings.Contains(hint, "alphabet.txt") {
 		t.Fatalf("multi completion hint = %q", hint)
+	}
+
+	caseBeta := filepath.Join(root, "CaseBeta")
+	caseBox := filepath.Join(root, "CaseBox")
+	for _, dir := range []string{caseBeta, caseBox} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("Mkdir(%q) returned error: %v", dir, err)
+		}
+	}
+	completed, hint = completeDirectoryPath(filepath.Join(root, "caseb"))
+	if completed != filepath.Join(root, "CaseB") {
+		t.Fatalf("mixed-case completion = %q, want common prefix %q", completed, filepath.Join(root, "CaseB"))
+	}
+	if !strings.Contains(hint, "CaseBeta") || !strings.Contains(hint, "CaseBox") {
+		t.Fatalf("mixed-case completion hint = %q", hint)
 	}
 
 	m := testModel()
@@ -289,20 +371,14 @@ func TestNewModelWithStorePathLoadsPersistedSessionsWithoutDefaults(t *testing.T
 	}
 }
 
-func TestNewModelWithStorePathFallsBackToDefaults(t *testing.T) {
+func TestNewModelWithStorePathStartsEmptyWithoutStoredSessions(t *testing.T) {
 	missingPath := filepath.Join(t.TempDir(), "missing", "sessions.json")
 	m := newModelWithStorePath(missingPath)
-	if m.manager.Count() != 3 {
-		t.Fatalf("missing store session count = %d, want default demo sessions", m.manager.Count())
+	if m.manager.Count() != 0 {
+		t.Fatalf("missing store session count = %d, want no default sessions", m.manager.Count())
 	}
-	if _, ok := m.manager.SessionByID("proc-1"); !ok {
-		t.Fatal("missing store did not create default process session")
-	}
-	if _, ok := m.manager.SessionByID("shell-1"); !ok {
-		t.Fatal("missing store did not create default shell session")
-	}
-	if _, ok := m.manager.SessionByID("omp-1"); !ok {
-		t.Fatal("missing store did not create default agent session")
+	if view := m.View(); !strings.Contains(view, "No sessions") {
+		t.Fatalf("empty model view missing no-sessions state:\n%s", view)
 	}
 
 	corruptPath := filepath.Join(t.TempDir(), "sessions.json")
@@ -310,12 +386,8 @@ func TestNewModelWithStorePathFallsBackToDefaults(t *testing.T) {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 	m = newModelWithStorePath(corruptPath)
-	if m.manager.Count() != 3 {
-		t.Fatalf("corrupt store session count = %d, want default demo sessions", m.manager.Count())
-	}
-	s, ok := m.manager.Session(0)
-	if !ok || !strings.Contains(strings.Join(s.Logs, "\n"), "[system] failed to load sessions:") {
-		t.Fatalf("corrupt store did not surface load error: %+v", s)
+	if m.manager.Count() != 0 {
+		t.Fatalf("corrupt store session count = %d, want no default sessions", m.manager.Count())
 	}
 }
 
@@ -483,6 +555,41 @@ func TestSpaceStoppingPTYDoesNotQuitTUI(t *testing.T) {
 	m = modelFromUpdate(t, updated)
 	if m.mode != UIModeMonitor {
 		t.Fatalf("mode after PTY stop = %s, want monitor", m.mode)
+	}
+}
+
+func TestStoppingPTYKeepsPollingBufferedFinalEvents(t *testing.T) {
+	m := testModel()
+	m.selectedSession = 1
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+
+	events := make(chan event.PTYMsg, 2)
+	events <- event.SessionPTYOutputMsg{SessionID: "shell-1", Data: []byte("final\r\n")}
+	events <- event.SessionPTYExitedMsg{SessionID: "shell-1"}
+	close(events)
+	m.ptyEvents = map[string]<-chan event.PTYMsg{"shell-1": events}
+
+	updated, cmd := m.Update(keyRune(' '))
+	if cmd == nil {
+		t.Fatal("space on running PTY returned nil command; want continued PTY polling")
+	}
+	m = modelFromUpdate(t, updated)
+
+	updated, cmd = m.Update(cmd())
+	m = modelFromUpdate(t, updated)
+	s, _ = m.manager.SessionByID("shell-1")
+	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "final") {
+		t.Fatalf("buffered PTY output after stop was not appended: %v", s.Logs)
+	}
+	if cmd == nil {
+		t.Fatal("buffered PTY output did not schedule next PTY poll")
+	}
+
+	updated, _ = m.Update(cmd())
+	m = modelFromUpdate(t, updated)
+	if _, ok := m.ptyEvents["shell-1"]; ok {
+		t.Fatal("PTY events entry remains after exit")
 	}
 }
 

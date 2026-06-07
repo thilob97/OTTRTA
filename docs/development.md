@@ -20,6 +20,12 @@ internal/tui      Bubble Tea model, update loop, views, styles, and key bindings
 
 ## Local validation
 
+Format Go files:
+
+```sh
+go fmt ./...
+```
+
 Run the project test suite:
 
 ```sh
@@ -31,6 +37,8 @@ Build the executable:
 ```sh
 go build ./cmd/ottrta
 ```
+
+GitHub Actions runs the same formatting and test checks on pushes to `main` and pull requests.
 
 ## Contribution notes
 

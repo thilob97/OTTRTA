@@ -49,11 +49,10 @@ var (
 				BorderForeground(lipgloss.Color("63")).
 				Padding(0, 1)
 
-	modalStyle = lipgloss.NewStyle().
+	inputBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("63")).
-			Padding(1, 2).
-			Background(lipgloss.Color("0"))
+			Padding(1, 2)
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("63"))
