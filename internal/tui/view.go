@@ -115,9 +115,15 @@ func (m Model) View() string {
 		height = 24
 	}
 
-	// Reserve space for footer and margins
+	inputBox := m.renderInputBox(width)
+	inputHeight := 0
+	if inputBox != "" {
+		inputHeight = strings.Count(inputBox, "\n") + 1
+	}
+
+	// Reserve space for footer, the input box when active, and margins.
 	footerHeight := 1
-	panelHeight := height - footerHeight - 2
+	panelHeight := height - footerHeight - inputHeight - 2
 	if panelHeight < 8 {
 		panelHeight = 8
 	}
@@ -159,15 +165,15 @@ func (m Model) View() string {
 		Render(m.renderLogPanel(rightWidth, panelHeight))
 
 	footer := mutedStyle.Render(m.renderFooter())
-	view := lipgloss.JoinVertical(
-		lipgloss.Left,
+	sections := []string{
 		lipgloss.JoinHorizontal(lipgloss.Top, left, right),
-		footer,
-	)
-	if modal := m.renderInputModal(); modal != "" {
-		return centerOverlay(view, modal, width, height)
 	}
-	return view
+	if inputBox != "" {
+		sections = append(sections, inputBox)
+	}
+	sections = append(sections, footer)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) renderAttachView(width, height, panelHeight int) string {
@@ -538,26 +544,30 @@ func truncateANSI(s string, maxWidth int) string {
 	return result
 }
 
-func (m Model) renderInputModal() string {
+func (m Model) renderInputBox(width int) string {
 	switch m.mode {
 	case UIModeRename:
 		name := m.renameSessionID
 		if s, ok := m.manager.SessionByID(m.renameSessionID); ok {
 			name = s.Name
 		}
-		return renderModal("Rename session", "Current: "+name, "Name", m.renameInput, "", "enter save  esc cancel")
+		return renderBottomInputBox(width, "Rename session", "Current: "+name, "Name", m.renameInput, "", "enter save  esc cancel")
 	case UIModeNewAgent:
 		if m.newAgentStep == 0 {
-			return renderModal("New agent (1/2)", "Enter command for the agent session.", "Command", m.newAgentCommandInput, "", "enter next  esc cancel")
+			return renderBottomInputBox(width, "New agent (1/2)", "Enter command for the agent session.", "Command", m.newAgentCommandInput, "", "enter next  esc cancel")
 		}
-		return renderModal("New agent (2/2)", "Enter working directory for the agent.", "Working directory", m.newAgentWorkDirInput, m.newAgentCompletionHint, "tab complete  enter create  esc back")
+		return renderBottomInputBox(width, "New agent (2/2)", "Enter working directory for the agent.", "Working directory", m.newAgentWorkDirInput, m.newAgentCompletionHint, "tab complete  enter create  esc back")
 	default:
 		return ""
 	}
 }
 
-func renderModal(title, subtitle, label, value, hint, help string) string {
-	const width = 52
+func renderBottomInputBox(width int, title, subtitle, label, value, hint, help string) string {
+	contentWidth := width - 2
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
 	input := value
 	if input == "" {
 		if label == "Command" {
@@ -580,53 +590,7 @@ func renderModal(title, subtitle, label, value, hint, help string) string {
 	}
 	lines = append(lines, "", mutedStyle.Render(help))
 	body := strings.Join(lines, "\n")
-	return modalStyle.Width(width).Render(body)
-}
-
-func centerOverlay(base, overlay string, width, height int) string {
-	baseLines := strings.Split(base, "\n")
-	overlayLines := strings.Split(overlay, "\n")
-	if len(baseLines) < height {
-		for len(baseLines) < height {
-			baseLines = append(baseLines, "")
-		}
-	}
-
-	overlayWidth := 0
-	for _, line := range overlayLines {
-		if lineWidth := lipgloss.Width(line); lineWidth > overlayWidth {
-			overlayWidth = lineWidth
-		}
-	}
-
-	row := (height - len(overlayLines)) / 2
-	if row < 0 {
-		row = 0
-	}
-	col := (width - overlayWidth) / 2
-	if col < 0 {
-		col = 0
-	}
-
-	// Erstelle einen Hintergrund-Stil für die Leerzeichen
-	bgStyle := lipgloss.NewStyle().Background(lipgloss.Color("0"))
-
-	for i, line := range overlayLines {
-		target := row + i
-		if target >= len(baseLines) {
-			break
-		}
-		// Fülle links und rechts mit Hintergrundfarbe
-		leftPad := bgStyle.Render(strings.Repeat(" ", col))
-		lineWidth := lipgloss.Width(line)
-		remainingWidth := width - col - lineWidth
-		rightPad := ""
-		if remainingWidth > 0 {
-			rightPad = bgStyle.Render(strings.Repeat(" ", remainingWidth))
-		}
-		baseLines[target] = leftPad + line + rightPad
-	}
-	return strings.Join(baseLines, "\n")
+	return inputBoxStyle.Width(contentWidth).Render(body)
 }
 
 func (m Model) renderFooter() string {

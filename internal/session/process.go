@@ -3,9 +3,12 @@ package session
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/thilob97/ottrta/internal/event"
@@ -102,7 +105,11 @@ func scanLines(wg *sync.WaitGroup, events chan<- event.ProcessMsg, sessionID str
 	for scanner.Scan() {
 		events <- event.SessionLogMsg{SessionID: sessionID, Line: scanner.Text()}
 	}
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !isClosedReadError(err) {
 		events <- event.SessionLogMsg{SessionID: sessionID, Line: fmt.Sprintf("[system] log stream error: %v", err)}
 	}
+}
+
+func isClosedReadError(err error) bool {
+	return errors.Is(err, os.ErrClosed) || strings.Contains(err.Error(), "file already closed")
 }

@@ -74,44 +74,8 @@ func newModelWithStorePath(storePath string) Model {
 	return newDefaultModel(storePath, nil)
 }
 
-func newDefaultModel(storePath string, loadErr error) Model {
-	sessionMgr := session.NewManager(defaultSessions())
-	m := newBaseModel(sessionMgr, storePath)
-	if loadErr != nil {
-		sessions := m.manager.Sessions()
-		if len(sessions) > 0 {
-			m.manager.AppendLog(sessions[0].ID, "[system] failed to load sessions: "+loadErr.Error())
-		}
-	}
-	return m
-}
-
-func defaultSessions() []session.Session {
-	return []session.Session{
-		{
-			ID:      "proc-1",
-			Name:    "proc-1",
-			Kind:    session.SessionKindProcess,
-			Status:  session.StatusStopped,
-			Command: "go",
-			Args:    []string{"version"},
-		},
-		{
-			ID:      "shell-1",
-			Name:    "shell-1",
-			Kind:    session.SessionKindPTY,
-			Status:  session.StatusStopped,
-			Command: session.DefaultShellCommand(),
-		},
-		{
-			ID:        "omp-1",
-			Name:      "omp-1",
-			Kind:      session.SessionKindAgent,
-			Status:    session.StatusStopped,
-			Command:   "omp",
-			AgentKind: session.AgentKindOmp,
-		},
-	}
+func newDefaultModel(storePath string, _ error) Model {
+	return newBaseModel(session.NewManager(nil), storePath)
 }
 
 func newBaseModel(sessionMgr session.Manager, storePath string) Model {
