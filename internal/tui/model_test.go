@@ -222,6 +222,73 @@ func TestNewAgentModeCreatesAgentWithWorkDirAndCancels(t *testing.T) {
 	// Note: View may truncate long log lines, so we only check that the session logs contain the cwd
 }
 
+func TestInputBoxRendersFullWidthAboveFooter(t *testing.T) {
+	const width = 100
+
+	tests := []struct {
+		name   string
+		setup  func(*Model)
+		title  string
+		footer string
+	}{
+		{
+			name: "rename",
+			setup: func(m *Model) {
+				m.mode = UIModeRename
+				m.renameSessionID = "proc-1"
+				m.renameInput = "proc-renamed"
+			},
+			title:  "Rename session",
+			footer: "RENAME | enter save",
+		},
+		{
+			name: "new agent",
+			setup: func(m *Model) {
+				m.mode = UIModeNewAgent
+				m.newAgentCommandInput = "omp"
+			},
+			title:  "New agent (1/2)",
+			footer: "NEW AGENT | tab complete",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := testModel()
+			m.width = width
+			m.height = 30
+			tt.setup(&m)
+
+			box := m.renderInputBox(width)
+			if box == "" {
+				t.Fatal("input box was empty")
+			}
+			for _, line := range strings.Split(box, "\n") {
+				if got := lipgloss.Width(line); got != width {
+					t.Fatalf("input box line width = %d, want %d: %q", got, width, line)
+				}
+			}
+
+			viewLines := strings.Split(m.View(), "\n")
+			boxLines := strings.Split(box, "\n")
+			if len(viewLines) <= len(boxLines) {
+				t.Fatalf("view too short for bottom input box:\n%s", m.View())
+			}
+			footerLine := viewLines[len(viewLines)-1]
+			if !strings.Contains(footerLine, tt.footer) {
+				t.Fatalf("footer not rendered below input box: %q", footerLine)
+			}
+			renderedBox := strings.Join(viewLines[len(viewLines)-1-len(boxLines):len(viewLines)-1], "\n")
+			if renderedBox != box {
+				t.Fatalf("input box is not immediately above footer\nbox:\n%s\nview:\n%s", box, m.View())
+			}
+			if !strings.Contains(renderedBox, tt.title) {
+				t.Fatalf("input box title %q missing:\n%s", tt.title, renderedBox)
+			}
+		})
+	}
+}
+
 func TestNewAgentWorkDirTabCompletion(t *testing.T) {
 	root := t.TempDir()
 	alpha := filepath.Join(root, "alpha")
