@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +128,99 @@ func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 	}
 }
 
+func TestLoadSessionsRejectsMalformedDefinitions(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{name: "empty id", json: `[{"id":"","name":"Agent","kind":"agent","command":"omp","agentKind":"omp"}]`},
+		{name: "empty command", json: `[{"id":"agent","name":"Agent","kind":"agent","command":"","agentKind":"omp"}]`},
+		{name: "unsupported kind", json: `[{"id":"x","name":"X","kind":"unknown","command":"go"}]`},
+		{name: "missing agent kind", json: `[{"id":"agent","name":"Agent","kind":"agent","command":"omp"}]`},
+		{name: "agent kind on process", json: `[{"id":"proc","name":"Proc","kind":"process","command":"go","agentKind":"omp"}]`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sessions.json")
+			if err := os.WriteFile(path, []byte(tt.json), 0o644); err != nil {
+				t.Fatalf("WriteFile returned error: %v", err)
+			}
+			if got, err := LoadSessions(path); err == nil {
+				t.Fatalf("LoadSessions returned (%+v, nil), want error", got)
+			}
+		})
+	}
+}
+
+func TestSaveSessionsRejectsInvalidDefinitionsBeforeReplacingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	original := []byte("[]\n")
+	if err := os.WriteFile(path, original, 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	err := SaveSessions(path, []Session{{
+		ID:      "bad",
+		Name:    "Bad",
+		Kind:    SessionKindProcess,
+		Command: "",
+	}})
+	if err == nil {
+		t.Fatal("SaveSessions returned nil error for invalid session")
+	}
+
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile returned error: %v", readErr)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("file content changed after failed save: %q", got)
+	}
+}
+
+func TestManagerCopiesCellsOnClonePaths(t *testing.T) {
+	original := Session{
+		ID:      "pty",
+		Name:    "pty",
+		Kind:    SessionKindPTY,
+		Command: "sh",
+		Args:    []string{"-l"},
+		Logs:    []string{"log"},
+		Cells:   [][]Cell{{{Char: 'a', SGR: "31"}}},
+	}
+	manager := NewManager([]Session{original})
+
+	original.Args[0] = "mutated"
+	original.Logs[0] = "mutated"
+	original.Cells[0][0].Char = 'z'
+	stored, _ := manager.SessionByID("pty")
+	if stored.Args[0] != "-l" || stored.Logs[0] != "log" || stored.Cells[0][0].Char != 'a' {
+		t.Fatalf("NewManager retained caller-owned slices: %+v", *stored)
+	}
+
+	snapshots := manager.Sessions()
+	snapshots[0].ID = "snapshot"
+	stored, _ = manager.SessionByID("pty")
+	if stored.ID != "pty" {
+		t.Fatalf("Sessions did not copy session structs: %+v", *stored)
+	}
+
+	added := Session{
+		ID:      "added",
+		Name:    "added",
+		Kind:    SessionKindPTY,
+		Command: "sh",
+		Cells:   [][]Cell{{{Char: 'b'}}},
+	}
+	manager.AddSession(added)
+	added.Cells[0][0].Char = 'y'
+	stored, _ = manager.SessionByID("added")
+	if stored.Cells[0][0].Char != 'b' {
+		t.Fatalf("AddSession retained caller-owned cells: %+v", *stored)
+	}
+}
+
 func TestAppendOutputCoalescesPTYChunks(t *testing.T) {
 	manager := NewManager([]Session{{
 		ID:     "pty",
@@ -204,6 +299,62 @@ func TestAppendOutputHandlesPowerShellCursorPositioning(t *testing.T) {
 	}
 }
 
+func TestAppendOutputCursorHomeDoesNotClearLogs(t *testing.T) {
+	manager := NewManager([]Session{{
+		ID:     "pty",
+		Name:   "pty",
+		Kind:   SessionKindPTY,
+		Status: StatusRunning,
+	}})
+
+	manager.AppendOutput("pty", "first\r\nsecond")
+	manager.AppendOutput("pty", "\x1b[Htop")
+
+	pty, _ := manager.SessionByID("pty")
+	got := strings.Join(pty.Logs, "|")
+	if !strings.Contains(got, "topst") {
+		t.Fatalf("cursor-home output = %q, want first row overwritten", got)
+	}
+	if !strings.Contains(got, "second") {
+		t.Fatalf("cursor-home output = %q, want existing later rows preserved", got)
+	}
+}
+
+func TestAppendOutputBackspaceAtColumnZeroDoesNotDelete(t *testing.T) {
+	manager := NewManager([]Session{{
+		ID:     "pty",
+		Name:   "pty",
+		Kind:   SessionKindPTY,
+		Status: StatusRunning,
+	}})
+
+	manager.AppendOutput("pty", "abc\b")
+	pty, _ := manager.SessionByID("pty")
+	if got := strings.Join(pty.Logs, "|"); got != "ab" {
+		t.Fatalf("normal backspace logs = %q, want ab", got)
+	}
+
+	manager = NewManager([]Session{{
+		ID:     "pty",
+		Name:   "pty",
+		Kind:   SessionKindPTY,
+		Status: StatusRunning,
+	}})
+	manager.AppendOutput("pty", "abc\r\b")
+	pty, _ = manager.SessionByID("pty")
+	if got := strings.Join(pty.Logs, "|"); got != "abc" {
+		t.Fatalf("column-zero backspace logs = %q, want abc", got)
+	}
+}
+
+func TestCommandLineQuotesDisplayArgs(t *testing.T) {
+	got := commandLine("cmd path", []string{"plain", "two words", "semi;colon", ""})
+	want := `"cmd path" plain "two words" "semi;colon" ""`
+	if got != want {
+		t.Fatalf("commandLine = %q, want %q", got, want)
+	}
+}
+
 func TestStartGoVersionProcessStreamsAndStops(t *testing.T) {
 	manager := NewManager([]Session{
 		{ID: "real-go-version", Name: "real-go-version", Kind: SessionKindProcess, Status: StatusStopped, Command: "go", Args: []string{"version"}},
@@ -250,6 +401,82 @@ func TestStartGoVersionProcessStreamsAndStops(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatalf("timed out waiting for process events: %v", s.Logs)
 		}
+	}
+}
+
+func TestProcessStreamsLongOutputLine(t *testing.T) {
+	t.Setenv("OTTRTA_TEST_LONG_LINE_PROCESS", "1")
+	wantLen := 128 * 1024
+	manager := NewManager([]Session{{
+		ID:      "long-line",
+		Name:    "long-line",
+		Kind:    SessionKindProcess,
+		Status:  StatusStopped,
+		Command: os.Args[0],
+		Args:    []string{"-test.run=TestLongLineHelperProcess", "-test.v=false"},
+	}})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := manager.StartSession(ctx, "long-line")
+	if err != nil {
+		t.Fatalf("StartSession returned error: %v", err)
+	}
+
+	var sawLongLine bool
+	for {
+		select {
+		case msg, ok := <-events:
+			if !ok {
+				t.Fatal("events channel closed before exit message")
+			}
+			switch msg := msg.(type) {
+			case event.SessionLogMsg:
+				if strings.Contains(msg.Line, "log stream error") {
+					t.Fatalf("scanner reported error for long line: %q", msg.Line)
+				}
+				if len(msg.Line) == wantLen {
+					sawLongLine = true
+				}
+			case event.SessionExitedMsg:
+				if msg.Err != nil {
+					t.Fatalf("helper process exited with error: %v", msg.Err)
+				}
+				if !sawLongLine {
+					t.Fatalf("long line of length %d was not streamed", wantLen)
+				}
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for long-line process")
+		}
+	}
+}
+
+func TestRemoveSessionStopsOnlyMatchingRuntimeKind(t *testing.T) {
+	stopErr := errors.New("stop failed")
+	manager := NewManager([]Session{{
+		ID:      "pty",
+		Name:    "pty",
+		Kind:    SessionKindPTY,
+		Status:  StatusRunning,
+		Command: "sh",
+	}})
+	manager.ptys["pty"] = fakePTYSession{stopErr: stopErr}
+
+	if err := manager.RemoveSession(0); !errors.Is(err, stopErr) {
+		t.Fatalf("RemoveSession error = %v, want %v", err, stopErr)
+	}
+	if manager.Count() != 1 {
+		t.Fatalf("Count after failed remove = %d, want 1", manager.Count())
+	}
+
+	manager.ptys["pty"] = fakePTYSession{}
+	if err := manager.RemoveSession(0); err != nil {
+		t.Fatalf("RemoveSession returned error: %v", err)
+	}
+	if manager.Count() != 0 {
+		t.Fatalf("Count after successful remove = %d, want 0", manager.Count())
 	}
 }
 
@@ -406,9 +633,31 @@ func TestStopPTYSessionKeepsManagerAlive(t *testing.T) {
 	}
 }
 
+func TestLongLineHelperProcess(t *testing.T) {
+	if os.Getenv("OTTRTA_TEST_LONG_LINE_PROCESS") != "1" {
+		return
+	}
+	fmt.Println(strings.Repeat("x", 128*1024))
+	os.Exit(0)
+}
 func TestPTYHelperProcess(t *testing.T) {
 	if os.Getenv("OTTRTA_TEST_HELPER_PROCESS") != "1" {
 		return
 	}
 	time.Sleep(time.Minute)
+}
+
+type fakePTYSession struct {
+	stopErr error
+}
+
+func (f fakePTYSession) Start(context.Context, PTYSpec) error { return nil }
+func (f fakePTYSession) Write([]byte) error                   { return nil }
+func (f fakePTYSession) Resize(int, int) error                { return nil }
+func (f fakePTYSession) Stop() error                          { return f.stopErr }
+
+func (f fakePTYSession) Events() <-chan PTYEvent {
+	ch := make(chan PTYEvent)
+	close(ch)
+	return ch
 }

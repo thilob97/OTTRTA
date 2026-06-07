@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/thilob97/ottrta/internal/event"
@@ -25,13 +26,7 @@ type Manager struct {
 func NewManager(sessions []Session) Manager {
 	items := make([]Session, len(sessions))
 	for i := range sessions {
-		items[i] = sessions[i]
-		if len(sessions[i].Args) > 0 {
-			items[i].Args = append([]string(nil), sessions[i].Args...)
-		}
-		if len(sessions[i].Logs) > 0 {
-			items[i].Logs = append([]string(nil), sessions[i].Logs...)
-		}
+		items[i] = cloneSession(sessions[i])
 	}
 
 	return Manager{
@@ -48,15 +43,7 @@ func (m *Manager) Count() int {
 
 func (m *Manager) Sessions() []Session {
 	items := make([]Session, len(m.sessions))
-	for i := range m.sessions {
-		items[i] = m.sessions[i]
-		if len(m.sessions[i].Args) > 0 {
-			items[i].Args = append([]string(nil), m.sessions[i].Args...)
-		}
-		if len(m.sessions[i].Logs) > 0 {
-			items[i].Logs = append([]string(nil), m.sessions[i].Logs...)
-		}
-	}
+	copy(items, m.sessions)
 	return items
 }
 
@@ -99,17 +86,31 @@ func (m *Manager) ClampIndex(index int) int {
 	return index
 }
 func (m *Manager) AddSession(s Session) {
-	m.sessions = append(m.sessions, s)
+	m.sessions = append(m.sessions, cloneSession(s))
 }
 
-func (m *Manager) RemoveSession(index int) {
+func (m *Manager) RemoveSession(index int) error {
 	if index < 0 || index >= len(m.sessions) {
-		return
+		return nil
 	}
-	id := m.sessions[index].ID
-	m.StopSession(id)
-	m.StopPTYSession(id)
+	s := &m.sessions[index]
+	id := s.ID
+	switch s.Kind {
+	case SessionKindProcess:
+		if _, ok := m.runtimes[id]; ok {
+			if err := m.StopSession(id); err != nil {
+				return err
+			}
+		}
+	case SessionKindPTY, SessionKindAgent:
+		if _, ok := m.ptys[id]; ok {
+			if err := m.StopPTYSession(id); err != nil {
+				return err
+			}
+		}
+	}
 	m.sessions = append(m.sessions[:index], m.sessions[index+1:]...)
+	return nil
 }
 
 func (m *Manager) AppendLog(id string, line string) bool {
@@ -203,6 +204,7 @@ func (m *Manager) StopSession(id string) error {
 	runtime.Stop()
 	s.Status = StatusStopped
 	m.appendLog(s, "[system] stopped")
+	delete(m.runtimes, id)
 	return nil
 }
 
@@ -267,13 +269,11 @@ func (m *Manager) StopPTYSession(id string) error {
 		return fmt.Errorf("session %q is not running", id)
 	}
 
-	if err := runtime.Stop(); err != nil {
-		m.appendLog(s, fmt.Sprintf("[system] stop failed: %v", err))
-	}
+	stopErr := runtime.Stop()
 	s.Status = StatusStopped
 	m.appendLog(s, "[system] stopped")
 	delete(m.ptys, id)
-	return nil
+	return stopErr
 }
 
 func (m *Manager) StopAllProcesses() {
@@ -312,9 +312,34 @@ func (m *Manager) AppendExitLog(id string, err error) bool {
 
 func commandLine(command string, args []string) string {
 	if len(args) == 0 {
-		return command
+		return quoteCommandPart(command)
 	}
-	return strings.Join(append([]string{command}, args...), " ")
+	var builder strings.Builder
+	builder.WriteString(quoteCommandPart(command))
+	for _, arg := range args {
+		builder.WriteByte(' ')
+		builder.WriteString(quoteCommandPart(arg))
+	}
+	return builder.String()
+}
+
+func quoteCommandPart(value string) string {
+	if !needsCommandQuote(value) {
+		return value
+	}
+	return strconv.Quote(value)
+}
+
+func needsCommandQuote(value string) bool {
+	if value == "" {
+		return true
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) || strings.ContainsRune(`"'\\$&|;()<>*?![]{}~`+"`", r) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) appendOutput(s *Session, text string) {
@@ -393,9 +418,6 @@ func (m *Manager) handleCSI(s *Session, text string, start int) int {
 			m.setOutputCol(s, firstANSIParam(params, 1)-1)
 		case 'H', 'f':
 			row, col := cursorPosition(params)
-			if row == 1 && col == 1 {
-				s.Logs = nil
-			}
 			m.setOutputRow(s, row-1)
 			m.setOutputCol(s, col-1)
 		case 'm':
@@ -585,14 +607,13 @@ func (m *Manager) writeOutputRune(s *Session, r rune) {
 
 func (m *Manager) deleteLastLogRune(s *Session) {
 	m.ensureOutputLine(s)
-	line := s.Cells[s.outputRow]
-	if s.outputCol > 0 {
-		s.outputCol--
+	if s.outputCol == 0 {
+		return
 	}
+	line := s.Cells[s.outputRow]
+	s.outputCol--
 	if s.outputCol < len(line) {
 		line = append(line[:s.outputCol], line[s.outputCol+1:]...)
-	} else if len(line) > 0 {
-		line = line[:len(line)-1]
 	}
 	s.Cells[s.outputRow] = line
 	s.Logs[s.outputRow] = renderCells(line)
@@ -696,4 +717,23 @@ func (m *Manager) appendLog(s *Session, line string) {
 		copy(s.Cells, s.Cells[1:])
 		s.Cells[len(s.Cells)-1] = nil
 	}
+}
+
+func cloneSession(s Session) Session {
+	s.Args = append([]string(nil), s.Args...)
+	s.Logs = append([]string(nil), s.Logs...)
+	s.Cells = cloneCells(s.Cells)
+	return s
+}
+
+func cloneCells(cells [][]Cell) [][]Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+
+	out := make([][]Cell, len(cells))
+	for i := range cells {
+		out[i] = append([]Cell(nil), cells[i]...)
+	}
+	return out
 }

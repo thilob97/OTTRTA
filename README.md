@@ -51,7 +51,7 @@ ottrta agent start omp --count 2
 | `ottrta run` | Run a foreground process without PTY emulation |
 | `ottrta shell` | Start an interactive PTY shell session |
 | `ottrta agent start omp` | Start one or more `omp` agent sessions |
-| `ottrta update` | Re-run the platform installer for the latest release |
+| `ottrta update` | Print the platform installer URL and command to run explicitly |
 | `ottrta version` | Print the current OTTRTA version |
 
 Usage details: [docs/usage.md](docs/usage.md)
@@ -75,7 +75,7 @@ Usage details: [docs/usage.md](docs/usage.md)
 
 ## Persistence
 
-When the TUI exits cleanly, OTTRTA saves session definitions and reloads them on the next start. Persisted data includes identifiers, command metadata, working directory, and agent kind, but not terminal logs.
+When the TUI exits cleanly, OTTRTA saves session definitions and reloads them on the next start. Persisted data includes identifiers, command metadata, working directory, and agent kind, but not terminal logs. Malformed persisted definitions are rejected instead of being loaded silently.
 
 ## Documentation
 
@@ -87,6 +87,7 @@ When the TUI exits cleanly, OTTRTA saves session definitions and reloads them on
 ## Development
 
 ```sh
+go fmt ./...
 go test ./...
 go build ./cmd/ottrta
 ```

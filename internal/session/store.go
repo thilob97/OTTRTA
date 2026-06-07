@@ -3,8 +3,10 @@ package session
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const sessionsFileName = "sessions.json"
@@ -42,7 +44,10 @@ func LoadSessions(path string) ([]Session, error) {
 	}
 
 	sessions := make([]Session, 0, len(stored))
-	for _, item := range stored {
+	for i, item := range stored {
+		if err := validateStoredSession(item); err != nil {
+			return nil, fmt.Errorf("session %d: %w", i, err)
+		}
 		sessions = append(sessions, Session{
 			ID:        item.ID,
 			Name:      item.Name,
@@ -59,8 +64,8 @@ func LoadSessions(path string) ([]Session, error) {
 
 func SaveSessions(path string, sessions []Session) error {
 	stored := make([]storedSession, 0, len(sessions))
-	for _, s := range sessions {
-		stored = append(stored, storedSession{
+	for i, s := range sessions {
+		item := storedSession{
 			ID:        s.ID,
 			Name:      s.Name,
 			Kind:      s.Kind,
@@ -68,7 +73,11 @@ func SaveSessions(path string, sessions []Session) error {
 			Args:      append([]string(nil), s.Args...),
 			WorkDir:   s.WorkDir,
 			AgentKind: s.AgentKind,
-		})
+		}
+		if err := validateStoredSession(item); err != nil {
+			return fmt.Errorf("session %d: %w", i, err)
+		}
+		stored = append(stored, item)
 	}
 
 	data, err := json.MarshalIndent(stored, "", "  ")
@@ -87,7 +96,12 @@ func SaveSessions(path string, sessions []Session) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpName)
+		}
+	}()
 
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
@@ -96,5 +110,36 @@ func SaveSessions(path string, sessions []Session) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	removeTmp = false
+	return nil
+}
+
+func validateStoredSession(s storedSession) error {
+	if strings.TrimSpace(s.ID) == "" {
+		return errors.New("id is required")
+	}
+	if strings.TrimSpace(s.Name) == "" {
+		return errors.New("name is required")
+	}
+	if strings.TrimSpace(s.Command) == "" {
+		return errors.New("command is required")
+	}
+
+	switch s.Kind {
+	case SessionKindProcess, SessionKindPTY:
+		if s.AgentKind != "" {
+			return errors.New("agent kind is only valid for agent sessions")
+		}
+	case SessionKindAgent:
+		if s.AgentKind != AgentKindOmp {
+			return fmt.Errorf("unsupported agent kind %q", s.AgentKind)
+		}
+	default:
+		return fmt.Errorf("unsupported session kind %q", s.Kind)
+	}
+
+	return nil
 }
