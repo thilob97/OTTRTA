@@ -40,7 +40,6 @@ type Session struct {
 	Args           []string
 	WorkDir        string
 	AgentKind      AgentKind
-	TaskID         string
 	NeedsAttention bool
 	Logs           []string
 	Cells          [][]Cell

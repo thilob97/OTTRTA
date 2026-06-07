@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/thilob97/ottrta/internal/event"
 	"github.com/thilob97/ottrta/internal/session"
-	"github.com/thilob97/ottrta/internal/task"
 )
 
 func testModel() Model {
@@ -21,8 +20,7 @@ func testModel() Model {
 		{ID: "shell-1", Name: "shell-1", Kind: session.SessionKindPTY, Status: session.StatusStopped, Command: session.DefaultShellCommand()},
 		{ID: "omp-1", Name: "omp-1", Kind: session.SessionKindAgent, AgentKind: session.AgentKindOmp, Status: session.StatusStopped, Command: "omp"},
 	})
-	taskMgr := task.NewManager(&sessionMgr)
-	return newBaseModel(sessionMgr, taskMgr, "")
+	return newBaseModel(sessionMgr, "")
 }
 
 func TestKeyNavigationIsClamped(t *testing.T) {
@@ -285,9 +283,6 @@ func TestNewModelWithStorePathLoadsPersistedSessionsWithoutDefaults(t *testing.T
 	if m.manager.Count() != 1 {
 		t.Fatalf("session count = %d, want 1 loaded session", m.manager.Count())
 	}
-	if len(m.taskManager.ListTasks()) != 0 {
-		t.Fatalf("loaded model created default tasks: %v", m.taskManager.ListTasks())
-	}
 	s, _ := m.manager.SessionByID("saved-1")
 	if s == nil || s.Name != "Saved One" || s.WorkDir != "C:/saved" || s.Status != session.StatusStopped || len(s.Logs) != 0 {
 		t.Fatalf("loaded session mismatch: %+v", s)
@@ -300,8 +295,14 @@ func TestNewModelWithStorePathFallsBackToDefaults(t *testing.T) {
 	if m.manager.Count() != 3 {
 		t.Fatalf("missing store session count = %d, want default demo sessions", m.manager.Count())
 	}
-	if len(m.taskManager.ListTasks()) != 1 {
-		t.Fatalf("missing store tasks = %d, want default demo task", len(m.taskManager.ListTasks()))
+	if _, ok := m.manager.SessionByID("proc-1"); !ok {
+		t.Fatal("missing store did not create default process session")
+	}
+	if _, ok := m.manager.SessionByID("shell-1"); !ok {
+		t.Fatal("missing store did not create default shell session")
+	}
+	if _, ok := m.manager.SessionByID("omp-1"); !ok {
+		t.Fatal("missing store did not create default agent session")
 	}
 
 	corruptPath := filepath.Join(t.TempDir(), "sessions.json")
@@ -373,7 +374,7 @@ func TestImpAvatarsHaveStableVariety(t *testing.T) {
 		t.Fatalf("stopped imp art does not show sleep marker: %q", stopped)
 	}
 	seen := map[string]bool{}
-	for _, id := range []string{"left", "right", "omp-1", "omp-2", "task-001-omp-1", "task-001-omp-2", "shell-1", "proc-1"} {
+	for _, id := range []string{"left", "right", "omp-1", "omp-2", "omp-3", "omp-4", "shell-1", "proc-1"} {
 		seen[impArt(id, session.StatusStopped, 0)] = true
 	}
 	if len(seen) < 3 {

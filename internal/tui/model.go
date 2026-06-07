@@ -2,11 +2,12 @@ package tui
 
 import (
 	"context"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/thilob97/ottrta/internal/event"
 	"github.com/thilob97/ottrta/internal/session"
-	"github.com/thilob97/ottrta/internal/task"
-	"time"
 )
 
 type focusPanel int
@@ -31,7 +32,6 @@ type animationTickMsg struct{}
 
 type Model struct {
 	manager                session.Manager
-	taskManager            *task.Manager
 	selectedSession        int
 	focus                  focusPanel
 	width                  int
@@ -65,8 +65,7 @@ func newModelWithStorePath(storePath string) Model {
 		sessions, err := session.LoadSessions(storePath)
 		if err == nil && len(sessions) > 0 {
 			sessionMgr := session.NewManager(sessions)
-			taskMgr := task.NewManager(&sessionMgr)
-			return newBaseModel(sessionMgr, taskMgr, storePath)
+			return newBaseModel(sessionMgr, storePath)
 		}
 		if err != nil {
 			return newDefaultModel(storePath, err)
@@ -76,14 +75,8 @@ func newModelWithStorePath(storePath string) Model {
 }
 
 func newDefaultModel(storePath string, loadErr error) Model {
-	sessionMgr := session.NewManager(nil)
-	taskMgr := task.NewManager(&sessionMgr)
-
-	// Create default task with 3 omp sessions
-	agentReq := task.AgentRequest{Kind: session.AgentKindOmp, Count: 3}
-	taskMgr.CreateTask("Demo race task", task.TaskModeRace, agentReq, "")
-
-	m := newBaseModel(sessionMgr, taskMgr, storePath)
+	sessionMgr := session.NewManager(defaultSessions())
+	m := newBaseModel(sessionMgr, storePath)
 	if loadErr != nil {
 		sessions := m.manager.Sessions()
 		if len(sessions) > 0 {
@@ -93,10 +86,37 @@ func newDefaultModel(storePath string, loadErr error) Model {
 	return m
 }
 
-func newBaseModel(sessionMgr session.Manager, taskMgr *task.Manager, storePath string) Model {
+func defaultSessions() []session.Session {
+	return []session.Session{
+		{
+			ID:      "proc-1",
+			Name:    "proc-1",
+			Kind:    session.SessionKindProcess,
+			Status:  session.StatusStopped,
+			Command: "go",
+			Args:    []string{"version"},
+		},
+		{
+			ID:      "shell-1",
+			Name:    "shell-1",
+			Kind:    session.SessionKindPTY,
+			Status:  session.StatusStopped,
+			Command: session.DefaultShellCommand(),
+		},
+		{
+			ID:        "omp-1",
+			Name:      "omp-1",
+			Kind:      session.SessionKindAgent,
+			Status:    session.StatusStopped,
+			Command:   "omp",
+			AgentKind: session.AgentKindOmp,
+		},
+	}
+}
+
+func newBaseModel(sessionMgr session.Manager, storePath string) Model {
 	return Model{
 		manager:       sessionMgr,
-		taskManager:   taskMgr,
 		focus:         focusSessions,
 		mode:          UIModeMonitor,
 		storePath:     storePath,

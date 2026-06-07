@@ -295,40 +295,6 @@ func (m *Manager) StopAllProcesses() {
 	}
 }
 
-func (m *Manager) StartTaskSessions(ctx context.Context, taskID string, cols, rows int) error {
-	for _, s := range m.sessions {
-		if s.TaskID == taskID && (s.Kind == SessionKindPTY || s.Kind == SessionKindAgent) {
-			if s.Status != StatusRunning {
-				_, err := m.StartPTYSession(ctx, s.ID, cols, rows)
-				if err != nil {
-					return fmt.Errorf("failed to start session %s: %w", s.ID, err)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (m *Manager) StopTaskSessions(taskID string) {
-	for _, s := range m.sessions {
-		if s.TaskID == taskID && (s.Kind == SessionKindPTY || s.Kind == SessionKindAgent) {
-			if s.Status == StatusRunning {
-				m.StopPTYSession(s.ID)
-			}
-		}
-	}
-}
-
-func (m *Manager) SessionsByTask(taskID string) []Session {
-	var result []Session
-	for _, s := range m.sessions {
-		if s.TaskID == taskID {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
 func (m *Manager) AppendExitLog(id string, err error) bool {
 	if err == nil {
 		return m.AppendLog(id, "[system] exited with code 0")

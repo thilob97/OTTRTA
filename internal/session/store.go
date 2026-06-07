@@ -17,7 +17,6 @@ type storedSession struct {
 	Args      []string    `json:"args,omitempty"`
 	WorkDir   string      `json:"workDir,omitempty"`
 	AgentKind AgentKind   `json:"agentKind,omitempty"`
-	TaskID    string      `json:"taskID,omitempty"`
 }
 
 func DefaultStorePath() (string, error) {
@@ -53,7 +52,6 @@ func LoadSessions(path string) ([]Session, error) {
 			Args:      append([]string(nil), item.Args...),
 			WorkDir:   item.WorkDir,
 			AgentKind: item.AgentKind,
-			TaskID:    item.TaskID,
 		})
 	}
 	return sessions, nil
@@ -70,7 +68,6 @@ func SaveSessions(path string, sessions []Session) error {
 			Args:      append([]string(nil), s.Args...),
 			WorkDir:   s.WorkDir,
 			AgentKind: s.AgentKind,
-			TaskID:    s.TaskID,
 		})
 	}
 

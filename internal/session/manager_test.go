@@ -41,7 +41,6 @@ func TestRenameSessionTrimsAndKeepsIdentity(t *testing.T) {
 		Name:    "old",
 		Kind:    SessionKindAgent,
 		Status:  StatusRunning,
-		TaskID:  "task-001",
 		Command: "omp",
 		Logs:    []string{"existing log"},
 		WorkDir: "work",
@@ -58,8 +57,8 @@ func TestRenameSessionTrimsAndKeepsIdentity(t *testing.T) {
 	if s.Name != "New Name" {
 		t.Fatalf("Name = %q, want trimmed New Name", s.Name)
 	}
-	if s.TaskID != "task-001" || s.Status != StatusRunning || len(s.Logs) != 1 {
-		t.Fatalf("rename mutated runtime/task fields: %+v", *s)
+	if s.Status != StatusRunning || len(s.Logs) != 1 {
+		t.Fatalf("rename mutated runtime fields: %+v", *s)
 	}
 
 	if manager.RenameSession("one", " \t ") {
@@ -84,7 +83,6 @@ func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 		Args:           []string{"--model", "default"},
 		WorkDir:        "work",
 		AgentKind:      AgentKindOmp,
-		TaskID:         "task-001",
 		NeedsAttention: true,
 		Logs:           []string{"runtime log"},
 		Cells:          [][]Cell{{{Char: 'x', SGR: "31"}}},
@@ -114,7 +112,7 @@ func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 	}
 	s := got[0]
 	if s.ID != "agent-1" || s.Name != "Agent One" || s.Kind != SessionKindAgent || s.Command != "omp" ||
-		s.WorkDir != "work" || s.AgentKind != AgentKindOmp || s.TaskID != "task-001" {
+		s.WorkDir != "work" || s.AgentKind != AgentKindOmp {
 		t.Fatalf("loaded definition mismatch: %+v", s)
 	}
 	if strings.Join(s.Args, ",") != "--model,default" {
