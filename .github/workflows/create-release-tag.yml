@@ -12,6 +12,9 @@ jobs:
   create-tag:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.create-tag.outputs.version }}
+      created: ${{ steps.create-tag.outputs.created }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -35,11 +38,40 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
+        id: create-tag
         run: |
           VERSION="${{ steps.read-version.outputs.version }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if git rev-parse "$VERSION" >/dev/null 2>&1; then
             echo "Tag $VERSION already exists; skipping."
+            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git tag "$VERSION"
           git push origin "$VERSION"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: create-tag
+    if: needs.create-tag.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.create-tag.outputs.version }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> 2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

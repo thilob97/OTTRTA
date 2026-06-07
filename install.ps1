@@ -17,6 +17,7 @@ Write-Host "Checking latest release of $owner/$repo..."
 $latestReleaseUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
 
 # Get Tag Name
+$tag = $null
 try {
     # Set security protocol to TLS 1.2
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -24,12 +25,23 @@ try {
     $tag = $response.tag_name
 } catch {
     # Fallback to redirect URL query
-    $webResponse = Invoke-WebRequest -Uri "https://github.com/$owner/$repo/releases/latest" -MaximumRedirection 0 -ErrorAction SilentlyContinue
-    $redirectUrl = $webResponse.Headers.Location
-    $tag = $redirectUrl.Split('/')[-1]
+    $webResponse = $null
+    try {
+        $webResponse = Invoke-WebRequest -Uri "https://github.com/$owner/$repo/releases/latest" -MaximumRedirection 0 -ErrorAction Stop
+    } catch {
+        if ($_.Exception.Response) {
+            $webResponse = $_.Exception.Response
+        }
+    }
+    if ($webResponse -and $webResponse.Headers) {
+        $redirectUrl = [string]$webResponse.Headers["Location"]
+        if ($redirectUrl) {
+            $tag = ($redirectUrl.TrimEnd('/') -split '/')[-1]
+        }
+    }
 }
 
-if (-not $tag) {
+if (-not $tag -or $tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
     Write-Error "Could not detect latest release version."
     exit 1
 }
@@ -49,33 +61,37 @@ New-Item -ItemType Directory -Path $tempDir | Out-Null
 $zipPath = Join-Path $tempDir $fileName
 $exePath = Join-Path $tempDir "ottrta.exe"
 
-# Download the zip
-Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+try {
+    # Download the zip
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
 
-# Extract
-Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+    # Extract
+    Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
 
-if (-not (Test-Path $exePath)) {
-    Write-Error "Could not find ottrta.exe in the extracted archive."
-    exit 1
+    if (-not (Test-Path $exePath)) {
+        throw "Could not find ottrta.exe in the extracted archive."
+    }
+    $rtaExePath = Join-Path $tempDir "rta.exe"
+
+    # Install directory: $HOME\.ottrta\bin
+    $installDir = Join-Path $HOME ".ottrta\bin"
+    if (-not (Test-Path $installDir)) {
+        New-Item -ItemType Directory -Path $installDir | Out-Null
+    }
+
+    $targetPath = Join-Path $installDir "ottrta.exe"
+    Copy-Item -Path $exePath -Destination $targetPath -Force
+
+    if (Test-Path $rtaExePath) {
+        $targetRtaPath = Join-Path $installDir "rta.exe"
+        Copy-Item -Path $rtaExePath -Destination $targetRtaPath -Force
+    }
+} finally {
+    # Clean up temp
+    if (Test-Path $tempDir) {
+        Remove-Item -Recurse -Force $tempDir
+    }
 }
-$rtaExePath = Join-Path $tempDir "rta.exe"
-
-# Install directory: $HOME\.ottrta\bin
-$installDir = Join-Path $HOME ".ottrta\bin"
-if (-not (Test-Path $installDir)) {
-    New-Item -ItemType Directory -Path $installDir | Out-Null
-}
-
-$targetPath = Join-Path $installDir "ottrta.exe"
-Copy-Item -Path $exePath -Destination $targetPath -Force
-
-if (Test-Path $rtaExePath) {
-    $targetRtaPath = Join-Path $installDir "rta.exe"
-    Copy-Item -Path $rtaExePath -Destination $targetRtaPath -Force
-}
-# Clean up temp
-Remove-Item -Recurse -Force $tempDir
 
 # Add to User PATH if not present
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

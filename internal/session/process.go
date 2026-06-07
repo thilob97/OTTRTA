@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/thilob97/ottrta/internal/event"
@@ -78,7 +77,7 @@ func (r *ProcessRuntime) CommandLine() string {
 	if len(r.cmd.Args) == 0 {
 		return ""
 	}
-	return strings.Join(r.cmd.Args, " ")
+	return commandLine(r.cmd.Args[0], r.cmd.Args[1:])
 }
 
 func (r *ProcessRuntime) stream(sessionID string, stdout io.Reader, stderr io.Reader) {

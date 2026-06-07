@@ -2,7 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"os"
+	"strings"
 	"testing"
+
+	"github.com/thilob97/ottrta/internal/session"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -99,5 +104,45 @@ func TestUpdateInstructionsSelectInstallerByPlatform(t *testing.T) {
 				t.Fatalf("updateInstructions(%q) retained old execution banner: %q", tt.goos, got)
 			}
 		})
+	}
+}
+
+func TestAgentEventLoopExitsAfterAllSessionsComplete(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	first := make(chan session.PTYEvent, 2)
+	first <- session.PTYEvent{SessionID: "omp-1", Data: []byte("first output\n")}
+	first <- session.PTYEvent{SessionID: "omp-1"}
+	close(first)
+
+	second := make(chan session.PTYEvent, 1)
+	second <- session.PTYEvent{SessionID: "omp-2"}
+	close(second)
+
+	sessions := []session.Session{
+		{ID: "omp-1"},
+		{ID: "omp-2"},
+	}
+
+	var out bytes.Buffer
+	err := runAgentEventLoop(
+		ctx,
+		cancel,
+		&out,
+		sessions,
+		[]<-chan session.PTYEvent{first, second},
+		make(chan os.Signal),
+		func(string) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("runAgentEventLoop returned error: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"first output", "[omp-1 exited]", "[omp-2 exited]"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
 	}
 }

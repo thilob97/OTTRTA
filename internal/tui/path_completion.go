@@ -44,7 +44,7 @@ func completeDirectoryPath(input string) (string, string) {
 
 	common := commonPrefix(matches)
 	completed := input
-	if len(common) > len(prefix) {
+	if common != prefix {
 		completed = dir + common
 	}
 	return completed, "matches: " + completionNames(matches)
@@ -65,15 +65,30 @@ func commonPrefix(values []string) string {
 		return ""
 	}
 	prefix := []rune(values[0])
+	prefixKey := []rune(strings.ToLower(values[0]))
 	for _, value := range values[1:] {
-		for !strings.HasPrefix(value, string(prefix)) {
+		valueKey := []rune(strings.ToLower(value))
+		for !hasRunePrefix(valueKey, prefixKey) {
 			if len(prefix) == 0 {
 				return ""
 			}
 			prefix = prefix[:len(prefix)-1]
+			prefixKey = prefixKey[:len(prefixKey)-1]
 		}
 	}
 	return string(prefix)
+}
+
+func hasRunePrefix(value, prefix []rune) bool {
+	if len(prefix) > len(value) {
+		return false
+	}
+	for i, r := range prefix {
+		if value[i] != r {
+			return false
+		}
+	}
+	return true
 }
 
 func completionNames(matches []string) string {

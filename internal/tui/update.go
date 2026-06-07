@@ -347,7 +347,12 @@ func (m Model) addNewAgent(command string, workdir string) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 func (m Model) removeSelected() (tea.Model, tea.Cmd) {
-	m.manager.RemoveSession(m.selectedSession)
+	if s, ok := m.manager.Session(m.selectedSession); ok {
+		if err := m.manager.RemoveSession(m.selectedSession); err != nil {
+			m.manager.AppendLog(s.ID, fmt.Sprintf("[system] remove failed: %v", err))
+			return m, nil
+		}
+	}
 	m.selectedSession = m.manager.ClampIndex(m.selectedSession)
 	return m, nil
 }
@@ -394,8 +399,7 @@ func (m Model) toggleSelected() (tea.Model, tea.Cmd) {
 				m.mode = UIModeMonitor
 				m.attachedSessionID = ""
 			}
-			delete(m.ptyEvents, s.ID)
-			return m, nil
+			return m, m.pollPTY(s.ID)
 		}
 
 		events, err := m.manager.StartPTYSession(processContext(), s.ID, m.ptyCols(), m.ptyRows())

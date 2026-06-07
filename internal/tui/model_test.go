@@ -244,6 +244,21 @@ func TestNewAgentWorkDirTabCompletion(t *testing.T) {
 		t.Fatalf("multi completion hint = %q", hint)
 	}
 
+	caseBeta := filepath.Join(root, "CaseBeta")
+	caseBox := filepath.Join(root, "CaseBox")
+	for _, dir := range []string{caseBeta, caseBox} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("Mkdir(%q) returned error: %v", dir, err)
+		}
+	}
+	completed, hint = completeDirectoryPath(filepath.Join(root, "caseb"))
+	if completed != filepath.Join(root, "CaseB") {
+		t.Fatalf("mixed-case completion = %q, want common prefix %q", completed, filepath.Join(root, "CaseB"))
+	}
+	if !strings.Contains(hint, "CaseBeta") || !strings.Contains(hint, "CaseBox") {
+		t.Fatalf("mixed-case completion hint = %q", hint)
+	}
+
 	m := testModel()
 	m = updateForTest(t, m, keyRune('n'))
 	m.newAgentStep = 1
@@ -483,6 +498,41 @@ func TestSpaceStoppingPTYDoesNotQuitTUI(t *testing.T) {
 	m = modelFromUpdate(t, updated)
 	if m.mode != UIModeMonitor {
 		t.Fatalf("mode after PTY stop = %s, want monitor", m.mode)
+	}
+}
+
+func TestStoppingPTYKeepsPollingBufferedFinalEvents(t *testing.T) {
+	m := testModel()
+	m.selectedSession = 1
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+
+	events := make(chan event.PTYMsg, 2)
+	events <- event.SessionPTYOutputMsg{SessionID: "shell-1", Data: []byte("final\r\n")}
+	events <- event.SessionPTYExitedMsg{SessionID: "shell-1"}
+	close(events)
+	m.ptyEvents = map[string]<-chan event.PTYMsg{"shell-1": events}
+
+	updated, cmd := m.Update(keyRune(' '))
+	if cmd == nil {
+		t.Fatal("space on running PTY returned nil command; want continued PTY polling")
+	}
+	m = modelFromUpdate(t, updated)
+
+	updated, cmd = m.Update(cmd())
+	m = modelFromUpdate(t, updated)
+	s, _ = m.manager.SessionByID("shell-1")
+	if got := strings.Join(s.Logs, "\n"); !strings.Contains(got, "final") {
+		t.Fatalf("buffered PTY output after stop was not appended: %v", s.Logs)
+	}
+	if cmd == nil {
+		t.Fatal("buffered PTY output did not schedule next PTY poll")
+	}
+
+	updated, _ = m.Update(cmd())
+	m = modelFromUpdate(t, updated)
+	if _, ok := m.ptyEvents["shell-1"]; ok {
+		t.Fatal("PTY events entry remains after exit")
 	}
 }
 
