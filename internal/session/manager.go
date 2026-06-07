@@ -25,13 +25,7 @@ type Manager struct {
 func NewManager(sessions []Session) Manager {
 	items := make([]Session, len(sessions))
 	for i := range sessions {
-		items[i] = sessions[i]
-		if len(sessions[i].Args) > 0 {
-			items[i].Args = append([]string(nil), sessions[i].Args...)
-		}
-		if len(sessions[i].Logs) > 0 {
-			items[i].Logs = append([]string(nil), sessions[i].Logs...)
-		}
+		items[i] = cloneSession(sessions[i])
 	}
 
 	return Manager{
@@ -49,13 +43,7 @@ func (m *Manager) Count() int {
 func (m *Manager) Sessions() []Session {
 	items := make([]Session, len(m.sessions))
 	for i := range m.sessions {
-		items[i] = m.sessions[i]
-		if len(m.sessions[i].Args) > 0 {
-			items[i].Args = append([]string(nil), m.sessions[i].Args...)
-		}
-		if len(m.sessions[i].Logs) > 0 {
-			items[i].Logs = append([]string(nil), m.sessions[i].Logs...)
-		}
+		items[i] = cloneSession(m.sessions[i])
 	}
 	return items
 }
@@ -99,7 +87,7 @@ func (m *Manager) ClampIndex(index int) int {
 	return index
 }
 func (m *Manager) AddSession(s Session) {
-	m.sessions = append(m.sessions, s)
+	m.sessions = append(m.sessions, cloneSession(s))
 }
 
 func (m *Manager) RemoveSession(index int) {
@@ -696,4 +684,23 @@ func (m *Manager) appendLog(s *Session, line string) {
 		copy(s.Cells, s.Cells[1:])
 		s.Cells[len(s.Cells)-1] = nil
 	}
+}
+
+func cloneSession(s Session) Session {
+	s.Args = append([]string(nil), s.Args...)
+	s.Logs = append([]string(nil), s.Logs...)
+	s.Cells = cloneCells(s.Cells)
+	return s
+}
+
+func cloneCells(cells [][]Cell) [][]Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+
+	out := make([][]Cell, len(cells))
+	for i := range cells {
+		out[i] = append([]Cell(nil), cells[i]...)
+	}
+	return out
 }

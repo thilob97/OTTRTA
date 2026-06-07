@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,6 +124,101 @@ func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 	}
 	if s.NeedsAttention || len(s.Logs) != 0 || len(s.Cells) != 0 || s.CurrentSGR != "" {
 		t.Fatalf("loaded runtime fields were not reset: %+v", s)
+	}
+}
+
+func TestLoadSessionsRejectsMalformedDefinitions(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{name: "empty id", json: `[{"id":"","name":"Agent","kind":"agent","command":"omp","agentKind":"omp"}]`},
+		{name: "empty command", json: `[{"id":"agent","name":"Agent","kind":"agent","command":"","agentKind":"omp"}]`},
+		{name: "unsupported kind", json: `[{"id":"x","name":"X","kind":"unknown","command":"go"}]`},
+		{name: "missing agent kind", json: `[{"id":"agent","name":"Agent","kind":"agent","command":"omp"}]`},
+		{name: "agent kind on process", json: `[{"id":"proc","name":"Proc","kind":"process","command":"go","agentKind":"omp"}]`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "sessions.json")
+			if err := os.WriteFile(path, []byte(tt.json), 0o644); err != nil {
+				t.Fatalf("WriteFile returned error: %v", err)
+			}
+			if got, err := LoadSessions(path); err == nil {
+				t.Fatalf("LoadSessions returned (%+v, nil), want error", got)
+			}
+		})
+	}
+}
+
+func TestSaveSessionsRejectsInvalidDefinitionsBeforeReplacingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	original := []byte("[]\n")
+	if err := os.WriteFile(path, original, 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	err := SaveSessions(path, []Session{{
+		ID:      "bad",
+		Name:    "Bad",
+		Kind:    SessionKindProcess,
+		Command: "",
+	}})
+	if err == nil {
+		t.Fatal("SaveSessions returned nil error for invalid session")
+	}
+
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile returned error: %v", readErr)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("file content changed after failed save: %q", got)
+	}
+}
+
+func TestManagerCopiesCellsOnClonePaths(t *testing.T) {
+	original := Session{
+		ID:      "pty",
+		Name:    "pty",
+		Kind:    SessionKindPTY,
+		Command: "sh",
+		Args:    []string{"-l"},
+		Logs:    []string{"log"},
+		Cells:   [][]Cell{{{Char: 'a', SGR: "31"}}},
+	}
+	manager := NewManager([]Session{original})
+
+	original.Args[0] = "mutated"
+	original.Logs[0] = "mutated"
+	original.Cells[0][0].Char = 'z'
+	stored, _ := manager.SessionByID("pty")
+	if stored.Args[0] != "-l" || stored.Logs[0] != "log" || stored.Cells[0][0].Char != 'a' {
+		t.Fatalf("NewManager retained caller-owned slices: %+v", *stored)
+	}
+
+	snapshots := manager.Sessions()
+	snapshots[0].Args[0] = "snapshot"
+	snapshots[0].Logs[0] = "snapshot"
+	snapshots[0].Cells[0][0].Char = 'x'
+	stored, _ = manager.SessionByID("pty")
+	if stored.Args[0] != "-l" || stored.Logs[0] != "log" || stored.Cells[0][0].Char != 'a' {
+		t.Fatalf("Sessions exposed mutable slices: %+v", *stored)
+	}
+
+	added := Session{
+		ID:      "added",
+		Name:    "added",
+		Kind:    SessionKindPTY,
+		Command: "sh",
+		Cells:   [][]Cell{{{Char: 'b'}}},
+	}
+	manager.AddSession(added)
+	added.Cells[0][0].Char = 'y'
+	stored, _ = manager.SessionByID("added")
+	if stored.Cells[0][0].Char != 'b' {
+		t.Fatalf("AddSession retained caller-owned cells: %+v", *stored)
 	}
 }
 
@@ -249,6 +345,55 @@ func TestStartGoVersionProcessStreamsAndStops(t *testing.T) {
 			}
 		case <-ctx.Done():
 			t.Fatalf("timed out waiting for process events: %v", s.Logs)
+		}
+	}
+}
+
+func TestProcessStreamsLongOutputLine(t *testing.T) {
+	t.Setenv("OTTRTA_TEST_LONG_LINE_PROCESS", "1")
+	wantLen := 128 * 1024
+	manager := NewManager([]Session{{
+		ID:      "long-line",
+		Name:    "long-line",
+		Kind:    SessionKindProcess,
+		Status:  StatusStopped,
+		Command: os.Args[0],
+		Args:    []string{"-test.run=TestLongLineHelperProcess", "-test.v=false"},
+	}})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := manager.StartSession(ctx, "long-line")
+	if err != nil {
+		t.Fatalf("StartSession returned error: %v", err)
+	}
+
+	var sawLongLine bool
+	for {
+		select {
+		case msg, ok := <-events:
+			if !ok {
+				t.Fatal("events channel closed before exit message")
+			}
+			switch msg := msg.(type) {
+			case event.SessionLogMsg:
+				if strings.Contains(msg.Line, "log stream error") {
+					t.Fatalf("scanner reported error for long line: %q", msg.Line)
+				}
+				if len(msg.Line) == wantLen {
+					sawLongLine = true
+				}
+			case event.SessionExitedMsg:
+				if msg.Err != nil {
+					t.Fatalf("helper process exited with error: %v", msg.Err)
+				}
+				if !sawLongLine {
+					t.Fatalf("long line of length %d was not streamed", wantLen)
+				}
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for long-line process")
 		}
 	}
 }
@@ -406,6 +551,13 @@ func TestStopPTYSessionKeepsManagerAlive(t *testing.T) {
 	}
 }
 
+func TestLongLineHelperProcess(t *testing.T) {
+	if os.Getenv("OTTRTA_TEST_LONG_LINE_PROCESS") != "1" {
+		return
+	}
+	fmt.Println(strings.Repeat("x", 128*1024))
+	os.Exit(0)
+}
 func TestPTYHelperProcess(t *testing.T) {
 	if os.Getenv("OTTRTA_TEST_HELPER_PROCESS") != "1" {
 		return

@@ -51,7 +51,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case updateAvailableMsg:
-		m.updateAvailable = msg.latestVersion
+		latest := strings.TrimSpace(msg.latestVersion)
+		if validReleaseTag(latest) && latest != m.version {
+			m.updateAvailable = latest
+		}
 		return m, nil
 	default:
 		return m, nil
@@ -511,15 +514,38 @@ func (m Model) checkForUpdateCmd() tea.Cmd {
 	}
 }
 
+const (
+	latestReleaseURL          = "https://api.github.com/repos/thilob97/ottrta/releases/latest"
+	defaultUpdateCheckTimeout = 2 * time.Second
+)
+
 func checkForUpdate() (string, error) {
 	client := &http.Client{
-		Timeout: 2 * time.Second,
+		Timeout: defaultUpdateCheckTimeout,
 	}
-	resp, err := client.Get("https://api.github.com/repos/thilob97/ottrta/releases/latest")
+	return checkForUpdateWithClient(client, latestReleaseURL)
+}
+
+func checkForUpdateWithClient(client *http.Client, url string) (string, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "ottrta")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("update check failed: %s", resp.Status)
+	}
 
 	var rel struct {
 		TagName string `json:"tag_name"`
@@ -527,5 +553,35 @@ func checkForUpdate() (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return "", err
 	}
-	return rel.TagName, nil
+
+	tag := strings.TrimSpace(rel.TagName)
+	if !validReleaseTag(tag) {
+		return "", fmt.Errorf("invalid release tag %q", rel.TagName)
+	}
+	return tag, nil
+}
+
+func validReleaseTag(tag string) bool {
+	if len(tag) < len("v0.0.0") || tag[0] != 'v' {
+		return false
+	}
+
+	partStart := 1
+	parts := 0
+	for i := 1; i <= len(tag); i++ {
+		if i != len(tag) && tag[i] != '.' {
+			if tag[i] < '0' || tag[i] > '9' {
+				return false
+			}
+			continue
+		}
+
+		if i == partStart {
+			return false
+		}
+		parts++
+		partStart = i + 1
+	}
+
+	return parts == 3
 }

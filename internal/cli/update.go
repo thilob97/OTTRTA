@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"runtime"
 
 	"github.com/spf13/cobra"
@@ -12,20 +10,30 @@ import (
 func newUpdateCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
-		Short: "Update OTTRTA/RTA to the latest version",
+		Short: "Show explicit update instructions for OTTRTA/RTA",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Updating OTTRTA/RTA...")
-			if runtime.GOOS == "windows" {
-				psCmd := exec.Command("powershell", "-c", "irm https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1 | iex")
-				psCmd.Stdout = os.Stdout
-				psCmd.Stderr = os.Stderr
-				return psCmd.Run()
-			} else {
-				shCmd := exec.Command("sh", "-c", "curl -fsSL https://raw.githubusercontent.com/thilob97/ottrta/main/install.sh | sh")
-				shCmd.Stdout = os.Stdout
-				shCmd.Stderr = os.Stderr
-				return shCmd.Run()
-			}
+			_, err := fmt.Fprint(cmd.OutOrStdout(), updateInstructions(runtime.GOOS))
+			return err
 		},
 	}
+}
+
+const (
+	installScriptURL        = "https://raw.githubusercontent.com/thilob97/ottrta/main/install.sh"
+	installPowerShellURL    = "https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1"
+	updateManualNotice      = "OTTRTA does not run remote installer scripts automatically.\nReview the installer first, then run the command explicitly if you trust it.\n\n"
+	updateUnixCommand       = "sh -c \"$(curl -fsSL " + installScriptURL + ")\""
+	updatePowerShellCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm " + installPowerShellURL + " | iex\""
+)
+
+func updateInstructions(goos string) string {
+	if goos == "windows" {
+		return updateManualNotice +
+			"Installer URL: " + installPowerShellURL + "\n" +
+			"Command:\n  " + updatePowerShellCommand + "\n"
+	}
+
+	return updateManualNotice +
+		"Installer URL: " + installScriptURL + "\n" +
+		"Command:\n  " + updateUnixCommand + "\n"
 }

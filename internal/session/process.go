@@ -12,7 +12,11 @@ import (
 	"github.com/thilob97/ottrta/internal/event"
 )
 
-const processEventBuffer = 128
+const (
+	processEventBuffer       = 128
+	maxProcessLogLineBytes   = 1024 * 1024
+	initialProcessBufferSize = 64 * 1024
+)
 
 // ProcessRuntime owns the OS process handles for one process session.
 type ProcessRuntime struct {
@@ -95,6 +99,7 @@ func scanLines(wg *sync.WaitGroup, events chan<- event.ProcessMsg, sessionID str
 	defer wg.Done()
 
 	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, initialProcessBufferSize), maxProcessLogLineBytes)
 	for scanner.Scan() {
 		events <- event.SessionLogMsg{SessionID: sessionID, Line: scanner.Text()}
 	}
