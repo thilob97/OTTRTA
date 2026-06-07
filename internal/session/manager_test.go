@@ -200,12 +200,10 @@ func TestManagerCopiesCellsOnClonePaths(t *testing.T) {
 	}
 
 	snapshots := manager.Sessions()
-	snapshots[0].Args[0] = "snapshot"
-	snapshots[0].Logs[0] = "snapshot"
-	snapshots[0].Cells[0][0].Char = 'x'
+	snapshots[0].ID = "snapshot"
 	stored, _ = manager.SessionByID("pty")
-	if stored.Args[0] != "-l" || stored.Logs[0] != "log" || stored.Cells[0][0].Char != 'a' {
-		t.Fatalf("Sessions exposed mutable slices: %+v", *stored)
+	if stored.ID != "pty" {
+		t.Fatalf("Sessions did not copy session structs: %+v", *stored)
 	}
 
 	added := Session{

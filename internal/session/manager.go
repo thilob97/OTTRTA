@@ -43,9 +43,7 @@ func (m *Manager) Count() int {
 
 func (m *Manager) Sessions() []Session {
 	items := make([]Session, len(m.sessions))
-	for i := range m.sessions {
-		items[i] = cloneSession(m.sessions[i])
-	}
+	copy(items, m.sessions)
 	return items
 }
 

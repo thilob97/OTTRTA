@@ -91,7 +91,7 @@ func TestUpdateInstructionsSelectInstallerByPlatform(t *testing.T) {
 		want string
 	}{
 		{name: "windows", goos: "windows", want: installPowerShellURL},
-		{name: "unix default", goos: "linux", want: installScriptURL},
+		{name: "unix default", goos: "linux", want: "curl -fsSL " + installScriptURL + " | sh"},
 	}
 
 	for _, tt := range tests {
