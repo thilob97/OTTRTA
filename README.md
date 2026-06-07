@@ -1,10 +1,10 @@
 # OTTRTA
 
-**One Terminal To Rule Them All** is a Go-based terminal UI and CLI for launching, monitoring, and attaching to multiple shell and AI-agent sessions from one place.
+**One TUI To Rule Them All** is a Go-based terminal workspace for launching, monitoring, and attaching to multiple shell and AI-agent sessions from one place.
 
 ## Why OTTRTA
 
-OTTRTA is built for workflows where several terminal-driven agents or shell processes need to run side by side. It combines a focused TUI with lightweight CLI commands for starting sessions, grouping agent races, and working with interactive PTY shells.
+OTTRTA is built for workflows where several terminal-driven agents or shell processes need to run side by side. It combines a focused TUI with lightweight CLI commands for starting sessions, launching agents, and working with interactive PTY shells.
 
 ## Highlights
 
@@ -12,7 +12,7 @@ OTTRTA is built for workflows where several terminal-driven agents or shell proc
 - Two-column session dashboard with live status and logs
 - Foreground command execution via `ottrta run`
 - Interactive PTY shell support via `ottrta shell`
-- Agent and task orchestration for `omp`-based sessions
+- Agent orchestration for `omp`-based sessions
 - Session persistence across TUI restarts
 - Cross-platform installation scripts for Linux, macOS, and Windows
 
@@ -40,7 +40,7 @@ More details: [docs/installation.md](docs/installation.md)
 ottrta
 ottrta run --name go-version --command go --args version
 ottrta shell
-ottrta task start "Compare agents" --agents omp:2
+ottrta agent start omp --count 2
 ```
 
 ## Commands
@@ -51,8 +51,6 @@ ottrta task start "Compare agents" --agents omp:2
 | `ottrta run` | Run a foreground process without PTY emulation |
 | `ottrta shell` | Start an interactive PTY shell session |
 | `ottrta agent start omp` | Start one or more `omp` agent sessions |
-| `ottrta task start` | Create a task and launch agent sessions |
-| `ottrta task list` | List in-memory tasks created in the current process |
 | `ottrta update` | Re-run the platform installer for the latest release |
 | `ottrta version` | Print the current OTTRTA version |
 
@@ -77,7 +75,7 @@ Usage details: [docs/usage.md](docs/usage.md)
 
 ## Persistence
 
-When the TUI exits cleanly, OTTRTA saves session definitions and reloads them on the next start. Persisted data includes identifiers, command metadata, working directory, agent kind, and task ID, but not terminal logs.
+When the TUI exits cleanly, OTTRTA saves session definitions and reloads them on the next start. Persisted data includes identifiers, command metadata, working directory, and agent kind, but not terminal logs.
 
 ## Documentation
 

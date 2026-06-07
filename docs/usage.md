@@ -1,6 +1,6 @@
 # Usage
 
-OTTRTA offers both an interactive TUI and focused CLI commands for terminal sessions, shells, agents, and tasks.
+OTTRTA offers both an interactive TUI and focused CLI commands for terminal sessions, shells, and agents.
 
 ## Start the TUI
 
@@ -46,20 +46,6 @@ ottrta agent start omp --count 2 --workdir /path/to/project
 
 At the moment, `omp` is the supported agent kind.
 
-### Start a task
-
-```sh
-ottrta task start "Compare approaches" --agents omp:3 --workdir /path/to/project
-```
-
-Tasks create grouped agent sessions. The default agent request is `omp:1`.
-
-### List tasks
-
-```sh
-ottrta task list
-```
-
 ### Show the version
 
 ```sh
@@ -98,6 +84,5 @@ The TUI stores session definitions on clean exit and reloads them on the next la
 - command and arguments
 - working directory
 - agent kind
-- task ID
 
 Terminal output is not persisted.
