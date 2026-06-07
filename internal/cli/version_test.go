@@ -26,6 +26,9 @@ func TestRootCommandIncludesRequiredCommands(t *testing.T) {
 			t.Fatalf("command %q not found: child=%v err=%v", name, child, err)
 		}
 	}
+	if child, _, err := cmd.Find([]string{"task"}); err == nil && child != nil && child.Name() == "task" {
+		t.Fatalf("unexpected task command found: %+v", child)
+	}
 }
 
 func TestRunCommandStreamsGoVersion(t *testing.T) {
