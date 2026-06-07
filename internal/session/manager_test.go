@@ -78,18 +78,17 @@ func TestRenameSessionTrimsAndKeepsIdentity(t *testing.T) {
 func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	want := []Session{{
-		ID:             "agent-1",
-		Name:           "Agent One",
-		Kind:           SessionKindAgent,
-		Status:         StatusRunning,
-		Command:        "omp",
-		Args:           []string{"--model", "default"},
-		WorkDir:        "work",
-		AgentKind:      AgentKindOmp,
-		NeedsAttention: true,
-		Logs:           []string{"runtime log"},
-		Cells:          [][]Cell{{{Char: 'x', SGR: "31"}}},
-		CurrentSGR:     "31",
+		ID:         "agent-1",
+		Name:       "Agent One",
+		Kind:       SessionKindAgent,
+		Status:     StatusRunning,
+		Command:    "omp",
+		Args:       []string{"--model", "default"},
+		WorkDir:    "work",
+		AgentKind:  AgentKindOmp,
+		Logs:       []string{"runtime log"},
+		Cells:      [][]Cell{{{Char: 'x', SGR: "31"}}},
+		CurrentSGR: "31",
 	}}
 
 	if err := SaveSessions(path, want); err != nil {
@@ -100,7 +99,7 @@ func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 		t.Fatalf("ReadFile returned error: %v", err)
 	}
 	raw := string(data)
-	for _, forbidden := range []string{"runtime log", "needsAttention", "\"status\"", "\"cells\"", "\"currentSGR\""} {
+	for _, forbidden := range []string{"runtime log", "\"status\"", "\"cells\"", "\"currentSGR\""} {
 		if strings.Contains(raw, forbidden) {
 			t.Fatalf("stored JSON contains runtime-only field %q:\n%s", forbidden, raw)
 		}
@@ -124,7 +123,7 @@ func TestSessionStoreRoundTripsDefinitionsOnly(t *testing.T) {
 	if s.Status != StatusStopped {
 		t.Fatalf("Status = %s, want stopped", s.Status)
 	}
-	if s.NeedsAttention || len(s.Logs) != 0 || len(s.Cells) != 0 || s.CurrentSGR != "" {
+	if len(s.Logs) != 0 || len(s.Cells) != 0 || s.CurrentSGR != "" {
 		t.Fatalf("loaded runtime fields were not reset: %+v", s)
 	}
 }

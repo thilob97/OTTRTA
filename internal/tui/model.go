@@ -26,7 +26,10 @@ const (
 	UIModeNewAgent UIMode = "new-agent"
 )
 
-const animationInterval = 450 * time.Millisecond
+const (
+	animationInterval     = 450 * time.Millisecond
+	attachEscDetachWindow = 500 * time.Millisecond
+)
 
 type animationTickMsg struct{}
 
@@ -49,6 +52,7 @@ type Model struct {
 	processEvents          map[string]<-chan event.ProcessMsg
 	ptyEvents              map[string]<-chan event.PTYMsg
 	version                string
+	lastAttachEscAt        time.Time
 	updateAvailable        string
 }
 

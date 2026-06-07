@@ -519,7 +519,7 @@ func TestEnterAttachesOnlyRunningPTYSession(t *testing.T) {
 	}
 }
 
-func TestAttachModeForwardsKeysAndEscDetaches(t *testing.T) {
+func TestAttachModeForwardsKeysAndDoubleEscDetaches(t *testing.T) {
 	m := testModel()
 	s, _ := m.manager.SessionByID("shell-1")
 	s.Status = session.StatusRunning
@@ -536,9 +536,32 @@ func TestAttachModeForwardsKeysAndEscDetaches(t *testing.T) {
 		t.Fatalf("attach key did not attempt PTY write: %v", s.Logs)
 	}
 
+	logsBeforeEsc := len(s.Logs)
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != UIModeAttach || m.attachedSessionID != "shell-1" {
+		t.Fatalf("first esc mode = %s/%q, want attach/shell-1", m.mode, m.attachedSessionID)
+	}
+	s, _ = m.manager.SessionByID("shell-1")
+	if len(s.Logs) <= logsBeforeEsc {
+		t.Fatalf("first esc did not attempt PTY write: before %d after %d", logsBeforeEsc, len(s.Logs))
+	}
+
 	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.mode != UIModeMonitor || m.attachedSessionID != "" {
-		t.Fatalf("esc detach mode = %s/%q, want monitor/empty", m.mode, m.attachedSessionID)
+		t.Fatalf("double esc detach mode = %s/%q, want monitor/empty", m.mode, m.attachedSessionID)
+	}
+}
+func TestAttachModeIgnoresSlowEscForDetach(t *testing.T) {
+	m := testModel()
+	s, _ := m.manager.SessionByID("shell-1")
+	s.Status = session.StatusRunning
+	m.mode = UIModeAttach
+	m.attachedSessionID = "shell-1"
+	m.lastAttachEscAt = time.Now().Add(-attachEscDetachWindow - time.Millisecond)
+
+	m = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != UIModeAttach || m.attachedSessionID != "shell-1" {
+		t.Fatalf("slow esc mode = %s/%q, want attach/shell-1", m.mode, m.attachedSessionID)
 	}
 }
 
@@ -639,7 +662,7 @@ func TestFooterShowsMonitorAndAttachModes(t *testing.T) {
 	}
 	m.mode = UIModeAttach
 	m.attachedSessionID = "shell-1"
-	if footer := m.renderFooter(); !strings.Contains(footer, "ATTACHED to shell-1 | esc detach") {
+	if footer := m.renderFooter(); !strings.Contains(footer, "ATTACHED to shell-1 | esc esc detach") {
 		t.Fatalf("attach footer = %q", footer)
 	}
 	m.mode = UIModeRename
@@ -707,25 +730,14 @@ func TestSessionListScrolling(t *testing.T) {
 		t.Fatalf("rendered sessions included off-screen session-0 after scrolling: %s", rendered)
 	}
 }
-func TestVisualAgentStatusAndAttention(t *testing.T) {
+func TestVisualAgentStatus(t *testing.T) {
 	m := testModel()
 	m.width = 100
 	m.height = 24
 
-	// Test 1: NeedsAttention == true should render "⚠️ ATTENTION"
+	var view string
 	m.manager = session.NewManager([]session.Session{
-		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusRunning, NeedsAttention: true, Logs: []string{"left-only"}},
-	})
-	m.selectedSession = 0
-
-	view := m.View()
-	if !strings.Contains(view, "⚠️ ATTENTION") {
-		t.Fatalf("expected view to contain attention badge '⚠️ ATTENTION', but got:\n%s", view)
-	}
-
-	// Test 2: Status rendering should include status symbols
-	m.manager = session.NewManager([]session.Session{
-		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusRunning, NeedsAttention: false},
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusRunning},
 	})
 	view = m.View()
 	if !strings.Contains(view, "🟢 running") {
@@ -733,7 +745,7 @@ func TestVisualAgentStatusAndAttention(t *testing.T) {
 	}
 
 	m.manager = session.NewManager([]session.Session{
-		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusStopped, NeedsAttention: false},
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusStopped},
 	})
 	view = m.View()
 	if !strings.Contains(view, "⚪ stopped") {
@@ -741,7 +753,7 @@ func TestVisualAgentStatusAndAttention(t *testing.T) {
 	}
 
 	m.manager = session.NewManager([]session.Session{
-		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusFailed, NeedsAttention: false},
+		{ID: "left", Name: "left", Kind: session.SessionKindPTY, Status: session.StatusFailed},
 	})
 	view = m.View()
 	if !strings.Contains(view, "🔴 failed") {

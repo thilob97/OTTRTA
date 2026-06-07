@@ -32,22 +32,21 @@ type Cell struct {
 }
 
 type Session struct {
-	ID             string
-	Name           string
-	Kind           SessionKind
-	Status         Status
-	Command        string
-	Args           []string
-	WorkDir        string
-	AgentKind      AgentKind
-	NeedsAttention bool
-	Logs           []string
-	Cells          [][]Cell
-	CurrentSGR     string
-	outputCol      int
-	outputRow      int
-	savedCol       int
-	savedRow       int
+	ID         string
+	Name       string
+	Kind       SessionKind
+	Status     Status
+	Command    string
+	Args       []string
+	WorkDir    string
+	AgentKind  AgentKind
+	Logs       []string
+	Cells      [][]Cell
+	CurrentSGR string
+	outputCol  int
+	outputRow  int
+	savedCol   int
+	savedRow   int
 }
 
 func (s Session) Running() bool {

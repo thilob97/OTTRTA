@@ -189,7 +189,7 @@ func (m Model) renderAttachView(width, height, panelHeight int) string {
 	contentWidth := termWidth - 4
 
 	headerLeft := titleStyle.Render(fmt.Sprintf(" ATTACHED: %s ", s.Name))
-	headerRight := mutedStyle.Render("  esc detach")
+	headerRight := mutedStyle.Render("  esc esc detach")
 	headerPad := contentWidth - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
 	if headerPad < 0 {
 		headerPad = 0
@@ -308,9 +308,6 @@ func (m Model) renderSessionList(width int, maxHeight int) string {
 
 func (m Model) renderSessionCard(s *session.Session, width int, selected bool) string {
 	status := renderStatus(s.Status)
-	if s.NeedsAttention {
-		status += " " + attentionBadgeStyle.Render("⚠️ ATTENTION")
-	}
 
 	avatarStr := impArt(s.ID, s.Status, m.animationFrame)
 	avatarWidth := lipgloss.Width(avatarStr)
@@ -332,18 +329,10 @@ func (m Model) renderSessionCard(s *session.Session, width int, selected bool) s
 	cardContent := lipgloss.JoinHorizontal(lipgloss.Top, avatarStr, " ", rightCol)
 
 	var style lipgloss.Style
-	if s.NeedsAttention {
-		if selected {
-			style = selectedAttentionSessionCardStyle
-		} else {
-			style = attentionSessionCardStyle
-		}
+	if selected {
+		style = selectedSessionCardStyle
 	} else {
-		if selected {
-			style = selectedSessionCardStyle
-		} else {
-			style = sessionCardStyle
-		}
+		style = sessionCardStyle
 	}
 	return style.Width(width).Render(cardContent)
 }
@@ -424,9 +413,6 @@ func (m Model) renderLogPanel(width int, height int) string {
 
 	headerLeft := titleStyle.Render(fmt.Sprintf(" %s ", s.Name))
 	headerRight := renderStatus(s.Status)
-	if s.NeedsAttention {
-		headerRight += " " + attentionBadgeStyle.Render("⚠️ ATTENTION")
-	}
 	headerPad := contentWidth - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
 	if headerPad < 0 {
 		headerPad = 0
@@ -599,16 +585,13 @@ func (m Model) renderFooter() string {
 		if s, ok := m.manager.SessionByID(m.attachedSessionID); ok {
 			name = s.Name
 		}
-		return fmt.Sprintf("ATTACHED to %s | esc detach", name)
+		return fmt.Sprintf("ATTACHED to %s | esc esc detach", name)
 	}
 	if m.mode == UIModeRename {
 		return "RENAME | enter save  esc cancel"
 	}
 	if m.mode == UIModeNewAgent {
 		return "NEW AGENT | tab complete  enter create  esc cancel"
-	}
-	if s, ok := m.manager.Session(m.selectedSession); ok && s.NeedsAttention {
-		return "selected session needs attention: press enter to attach"
 	}
 	suffix := ""
 	if m.updateAvailable != "" {

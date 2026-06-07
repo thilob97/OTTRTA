@@ -35,11 +35,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case event.SessionPTYOutputMsg:
 		m.manager.AppendOutput(msg.SessionID, string(msg.Data))
-		if s, ok := m.manager.SessionByID(msg.SessionID); ok && s.Kind == session.SessionKindAgent {
-			if s.AgentKind == session.AgentKindOmp && agent.CheckAttention(string(msg.Data)) {
-				m.manager.SetAttention(msg.SessionID, true)
-			}
-		}
 		return m, m.pollPTY(msg.SessionID)
 	case event.SessionPTYExitedMsg:
 		m.manager.AppendExitLog(msg.SessionID, msg.Err)
@@ -125,16 +120,28 @@ func (m Model) updateMonitorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateAttachKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyEsc {
-		// Resize PTY back to monitor view size
-		if s, ok := m.manager.SessionByID(m.attachedSessionID); ok {
-			cols := m.ptyCols()
-			rows := m.ptyRows()
-			m.manager.ResizePTYSession(s.ID, cols, rows)
+		now := time.Now()
+		if !m.lastAttachEscAt.IsZero() && now.Sub(m.lastAttachEscAt) <= attachEscDetachWindow {
+			// Resize PTY back to monitor view size.
+			if s, ok := m.manager.SessionByID(m.attachedSessionID); ok {
+				cols := m.ptyCols()
+				rows := m.ptyRows()
+				m.manager.ResizePTYSession(s.ID, cols, rows)
+			}
+			m.mode = UIModeMonitor
+			m.attachedSessionID = ""
+			m.lastAttachEscAt = time.Time{}
+			return m, nil
 		}
-		m.mode = UIModeMonitor
-		m.attachedSessionID = ""
+
+		m.lastAttachEscAt = now
+		if err := m.manager.WritePTYSession(m.attachedSessionID, []byte{0x1b}); err != nil {
+			m.manager.AppendLog(m.attachedSessionID, fmt.Sprintf("[system] write failed: %v", err))
+		}
 		return m, nil
 	}
+
+	m.lastAttachEscAt = time.Time{}
 
 	data := keyToBytes(msg)
 	if len(data) == 0 {
@@ -281,9 +288,9 @@ func (m Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if (s.Kind == session.SessionKindPTY || s.Kind == session.SessionKindAgent) && s.Status == session.StatusRunning {
-		m.manager.SetAttention(s.ID, false)
 		m.mode = UIModeAttach
 		m.attachedSessionID = s.ID
+		m.lastAttachEscAt = time.Time{}
 		// Resize PTY to match attach view width
 		termWidth := m.width - 4
 		if termWidth < 30 {

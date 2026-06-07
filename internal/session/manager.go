@@ -153,14 +153,6 @@ func (m *Manager) SetStatus(id string, status Status) bool {
 	}
 	return true
 }
-func (m *Manager) SetAttention(id string, attention bool) bool {
-	s, ok := m.SessionByID(id)
-	if !ok {
-		return false
-	}
-	s.NeedsAttention = attention
-	return true
-}
 
 func (m *Manager) StartSession(ctx context.Context, id string) (<-chan event.ProcessMsg, error) {
 	s, ok := m.SessionByID(id)

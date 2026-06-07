@@ -22,16 +22,6 @@ var (
 					BorderForeground(lipgloss.Color("63")).
 					Background(lipgloss.Color("235"))
 
-	attentionSessionCardStyle = sessionCardStyle.Copy().
-					BorderForeground(lipgloss.Color("208"))
-
-	selectedAttentionSessionCardStyle = selectedSessionCardStyle.Copy().
-						BorderForeground(lipgloss.Color("208"))
-
-	attentionBadgeStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("208"))
-
 	// Terminal panel: same background as session panel
 	baseTermStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
