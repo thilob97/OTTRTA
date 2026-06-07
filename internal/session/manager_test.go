@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -450,6 +451,27 @@ func TestProcessStreamsLongOutputLine(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal("timed out waiting for long-line process")
 		}
+	}
+}
+
+func TestScanLinesIgnoresClosedReader(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe returned error: %v", err)
+	}
+	_ = writer.Close()
+	_ = reader.Close()
+
+	events := make(chan event.ProcessMsg, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	scanLines(&wg, events, "closed", reader)
+	wg.Wait()
+
+	select {
+	case msg := <-events:
+		t.Fatalf("scanLines emitted event for closed reader: %#v", msg)
+	default:
 	}
 }
 
