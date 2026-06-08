@@ -24,16 +24,42 @@ The shell installer:
 
 ## Install on Windows
 
+### Recommended (PowerShell session already open)
+
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1 | iex"
+irm https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1 | iex
 ```
 
-The PowerShell installer:
+Run this in an already opened PowerShell session (`powershell`, `pwsh`, or Windows Terminal PowerShell profile).
+
+The PowerShell installer runs without admin privileges and:
 
 - resolves the latest release from GitHub
 - downloads the Windows zip archive
 - installs `ottrta.exe` and `rta.exe` into `~/.ottrta/bin`
 - adds the install directory to the user `Path` if required
+
+### Without remote-script pipe (manual, user scope)
+
+Use this when your environment blocks `irm ... | iex`:
+
+1. Open the latest release page: `https://github.com/thilob97/ottrta/releases/latest`
+2. Download the archive matching your system:
+   - `ottrta_<version>_windows_amd64.zip` or
+   - `ottrta_<version>_windows_arm64.zip`
+3. Extract it into a user-writable install directory, for example:
+   - `%USERPROFILE%\.ottrta\bin`
+4. Ensure both `ottrta.exe` and `rta.exe` are present in that directory.
+5. Add the directory to your user `Path` if it is not already there.
+6. Open a new terminal and verify:
+
+```powershell
+ottrta version
+```
+
+### Manual fallback for restrictive company policies
+
+If direct GitHub downloads are blocked, download the same release ZIP through your approved internal artifact mirror, then follow the same extraction and user-`Path` steps above.
 
 ## Update to the latest release
 

@@ -27,10 +27,11 @@ curl -fsSL https://raw.githubusercontent.com/thilob97/ottrta/main/install.sh | s
 ### Windows (PowerShell)
 
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1 | iex"
+irm https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1 | iex
 ```
 
-The installer downloads the latest GitHub release and installs both `ottrta` and the `rta` alias.
+Run the command inside an already opened PowerShell session (Windows PowerShell or PowerShell 7).  
+The installer runs in user scope, downloads the latest GitHub release, installs `ottrta` and `rta` into `~/.ottrta/bin`, and updates the user `Path`.
 
 More details: [docs/installation.md](docs/installation.md)
 

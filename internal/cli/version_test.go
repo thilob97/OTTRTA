@@ -100,6 +100,9 @@ func TestUpdateInstructionsSelectInstallerByPlatform(t *testing.T) {
 			if !bytes.Contains([]byte(got), []byte(tt.want)) {
 				t.Fatalf("updateInstructions(%q) = %q, want %q", tt.goos, got, tt.want)
 			}
+			if tt.goos == "windows" && bytes.Contains([]byte(got), []byte("powershell -NoProfile")) {
+				t.Fatalf("updateInstructions(%q) should not wrap command with powershell.exe: %q", tt.goos, got)
+			}
 			if bytes.Contains([]byte(got), []byte("Updating OTTRTA/RTA")) {
 				t.Fatalf("updateInstructions(%q) retained old execution banner: %q", tt.goos, got)
 			}
