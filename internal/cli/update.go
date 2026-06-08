@@ -23,7 +23,7 @@ const (
 	installPowerShellURL    = "https://raw.githubusercontent.com/thilob97/ottrta/main/install.ps1"
 	updateManualNotice      = "OTTRTA does not run remote installer scripts automatically.\nReview the installer first, then run the command explicitly if you trust it.\n\n"
 	updateUnixCommand       = "curl -fsSL " + installScriptURL + " | sh"
-	updatePowerShellCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm " + installPowerShellURL + " | iex\""
+	updatePowerShellCommand = "irm " + installPowerShellURL + " | iex"
 )
 
 func updateInstructions(goos string) string {
